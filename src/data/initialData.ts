@@ -298,9 +298,9 @@ export const INITIAL_SETTINGS: Setting[] = [
   },
   {
     SETTING: 'APPS_SCRIPT_WEBAPP_URL',
-    VALUE: '',
-    DESCRIPTION: 'URL Web App Google Apps Script hasil deploy (opsional untuk live sync)',
-    UPDATED_AT: '2026-08-30T10:00:00.000Z',
+    VALUE: 'https://script.google.com/macros/s/AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw/exec',
+    DESCRIPTION: 'URL Web App Google Apps Script & Google Sheets aktif (ID: AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw)',
+    UPDATED_AT: '2026-08-31T10:00:00.000Z',
   },
 ];
 

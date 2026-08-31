@@ -5,6 +5,7 @@ import {
   INITIAL_CATEGORIES, INITIAL_PRODUCTS, INITIAL_SETTINGS, 
   INITIAL_BANNERS, INITIAL_TESTIMONIALS, INITIAL_CUSTOMERS, INITIAL_ORDERS, INITIAL_LOGS 
 } from '../data/initialData';
+import { gasSync } from './gasSyncService';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'bonles_products_v3',
@@ -49,19 +50,32 @@ class StoreService {
     const idx = list.findIndex(c => c.ID === cat.ID);
     const now = new Date().toISOString();
     
+    let saved: Category;
     if (idx >= 0) {
-      list[idx] = { ...cat, UPDATED_AT: now };
+      saved = { ...cat, UPDATED_AT: now };
+      list[idx] = saved;
     } else {
-      list.push({ 
+      saved = { 
         ...cat, 
         ID: cat.ID || `CAT-${String(list.length + 1).padStart(3, '0')}`,
         CREATED_AT: now, 
         UPDATED_AT: now 
-      });
+      };
+      list.push(saved);
     }
     this.setStorage(STORAGE_KEYS.CATEGORIES, list);
-    this.addLog('AUDIT', idx >= 0 ? 'UPDATE_CATEGORY' : 'CREATE_CATEGORY', 'ADMIN', cat.ID, `Kategori ${cat.NAME} disimpan`);
-    return cat;
+    this.addLog('AUDIT', idx >= 0 ? 'UPDATE_CATEGORY' : 'CREATE_CATEGORY', 'ADMIN', saved.ID, `Kategori ${saved.NAME} disimpan`);
+    
+    // Background sync to Google Sheets
+    gasSync.syncCategory(saved).then(res => {
+      if (res.success) {
+        this.addLog('SYNC', 'SYNC_CATEGORY_SUCCESS', 'SYSTEM', saved.ID, `Kategori ${saved.NAME} berhasil disinkronkan ke Google Spreadsheet`, 'SUCCESS');
+      } else {
+        console.warn('Sync Category warning:', res.message);
+      }
+    }).catch(err => console.warn('Sync Category Error:', err));
+
+    return saved;
   }
 
   // Products
@@ -77,7 +91,7 @@ class StoreService {
     return this.getProducts().find(p => p.ID === id || p.SKU === id);
   }
 
-  saveProduct(prod: Product): Product {
+  saveProduct(prod: Product, imageBase64?: string): Product {
     const list = this.getProducts();
     const idx = list.findIndex(p => p.ID === prod.ID || p.SKU === prod.SKU);
     const now = new Date().toISOString();
@@ -97,6 +111,26 @@ class StoreService {
     }
     this.setStorage(STORAGE_KEYS.PRODUCTS, list);
     this.addLog('AUDIT', idx >= 0 ? 'UPDATE_PRODUCT' : 'CREATE_PRODUCT', 'ADMIN', saved.SKU, `Produk ${saved.NAME} berhasil disimpan`);
+
+    // Background sync to Google Sheets & Drive
+    gasSync.syncProduct(saved, imageBase64).then(res => {
+      if (res.success) {
+        this.addLog('SYNC', 'SYNC_PRODUCT_SUCCESS', 'SYSTEM', saved.SKU, `Produk ${saved.NAME} berhasil dicatat di Google Spreadsheet & Drive`, 'SUCCESS');
+        // If image URL returned from Drive, update local state
+        if (res.data && res.data.MAIN_IMAGE_URL && res.data.MAIN_IMAGE_URL !== saved.MAIN_IMAGE_URL) {
+          const freshList = this.getProducts();
+          const target = freshList.find(p => p.ID === saved.ID || p.SKU === saved.SKU);
+          if (target) {
+            target.MAIN_IMAGE_URL = res.data.MAIN_IMAGE_URL;
+            target.MAIN_IMAGE_FILE_ID = res.data.MAIN_IMAGE_FILE_ID || target.MAIN_IMAGE_FILE_ID;
+            this.setStorage(STORAGE_KEYS.PRODUCTS, freshList);
+          }
+        }
+      } else {
+        console.warn('Sync Product warning:', res.message);
+      }
+    }).catch(err => console.warn('Sync Product Error:', err));
+
     return saved;
   }
 
@@ -109,6 +143,9 @@ class StoreService {
       list[idx].UPDATED_AT = new Date().toISOString();
       this.setStorage(STORAGE_KEYS.PRODUCTS, list);
       this.addLog('AUDIT', 'SOFT_DELETE_PRODUCT', 'ADMIN', list[idx].SKU, `Produk ${list[idx].NAME} dinonaktifkan (soft delete)`);
+      
+      // Sync deletion to Google Sheets
+      gasSync.syncProduct(list[idx]).catch(err => console.warn('Sync Delete Product Error:', err));
       return true;
     }
     return false;
@@ -182,6 +219,9 @@ class StoreService {
       list[idx].UPDATED_AT = new Date().toISOString();
       this.setStorage(STORAGE_KEYS.ORDERS, list);
       this.addLog('AUDIT', 'UPDATE_ORDER_STATUS', 'ADMIN', orderId, `Status pesanan diubah menjadi ${status}`);
+      
+      // Background sync to GAS
+      gasSync.syncOrder({ action: 'updateOrderStatus', orderId, status }).catch(err => console.warn('Order status sync error:', err));
       return list[idx];
     }
     throw new Error('Pesanan tidak ditemukan');
@@ -254,38 +294,38 @@ class StoreService {
         POSTAL_CODE: form.postalCode,
         CREATED_AT: isoNow,
         UPDATED_AT: isoNow,
-        ORDER_COUNT: 1,
-        TOTAL_SPENT: total,
       };
       customers.push(customer);
     } else {
       customer.ADDRESS = form.address;
       customer.CITY = form.city;
       customer.POSTAL_CODE = form.postalCode;
-      customer.ORDER_COUNT = (customer.ORDER_COUNT || 0) + 1;
-      customer.TOTAL_SPENT = (customer.TOTAL_SPENT || 0) + total;
       customer.UPDATED_AT = isoNow;
     }
     this.setStorage(STORAGE_KEYS.CUSTOMERS, customers);
 
-    // Deduct stock from database
-    validatedItems.forEach(vi => {
-      const pIdx = allProducts.findIndex(p => p.ID === vi.product.ID);
-      if (pIdx >= 0) {
-        allProducts[pIdx].STOCK -= vi.qty;
-        allProducts[pIdx].UPDATED_AT = isoNow;
+    // Atomically decrement stock in memory
+    const updatedProducts = allProducts.map(p => {
+      const match = validatedItems.find(v => v.product.ID === p.ID);
+      if (match) {
+        return {
+          ...p,
+          STOCK: Math.max(0, p.STOCK - match.qty),
+          UPDATED_AT: isoNow,
+        };
       }
+      return p;
     });
-    this.setStorage(STORAGE_KEYS.PRODUCTS, allProducts);
+    this.setStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
 
-    // Save Order
+    // Build Order record
     const newOrder: Order = {
       ORDER_ID: orderId,
       ORDER_DATE: isoNow,
       CUSTOMER_ID: customer.CUSTOMER_ID,
       CUSTOMER_NAME: form.name,
       PHONE: form.phone,
-      EMAIL: form.email,
+      EMAIL: form.email || '',
       ADDRESS: form.address,
       CITY: form.city,
       POSTAL_CODE: form.postalCode,
@@ -317,6 +357,31 @@ class StoreService {
     // Log
     this.addLog('AUDIT', 'CREATE_ORDER', 'CUSTOMER', orderId, `Pesanan dibuat untuk ${form.name} senilai Rp ${total.toLocaleString('id-ID')}`);
 
+    // Background sync to Google Sheets
+    gasSync.syncOrder({
+      customer: {
+        name: form.name,
+        phone: form.phone,
+        email: form.email || '',
+        address: form.address,
+        city: form.city,
+        postal_code: form.postalCode,
+        notes: form.notes || '',
+      },
+      items: validatedItems.map(vi => ({
+        product_id: vi.product.ID,
+        sku: vi.product.SKU,
+        quantity: vi.qty,
+      })),
+      shipping_cost: shippingCost,
+      payment_method: form.paymentMethod || 'Transfer Bank',
+      shipping_method: form.shippingMethod || 'Reguler',
+    }).then(res => {
+      if (res.success) {
+        this.addLog('SYNC', 'SYNC_ORDER_SUCCESS', 'SYSTEM', orderId, `Pesanan ${orderId} berhasil dicatat di Google Spreadsheet`, 'SUCCESS');
+      }
+    }).catch(err => console.warn('Order sync warning:', err));
+
     // Clear cart
     this.clearCart();
 
@@ -330,7 +395,24 @@ class StoreService {
 
   // Settings
   getSettings(): Setting[] {
-    return this.getStorage<Setting[]>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+    const list = this.getStorage<Setting[]>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+    // Ensure default APPS_SCRIPT_WEBAPP_URL is present
+    const scriptSetting = list.find(s => s.SETTING === 'APPS_SCRIPT_WEBAPP_URL');
+    if (!scriptSetting || !scriptSetting.VALUE || !scriptSetting.VALUE.trim()) {
+      const defaultUrl = 'https://script.google.com/macros/s/AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw/exec';
+      if (!scriptSetting) {
+        list.push({
+          SETTING: 'APPS_SCRIPT_WEBAPP_URL',
+          VALUE: defaultUrl,
+          DESCRIPTION: 'URL Web App Google Apps Script & Google Sheets aktif (ID: AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw)',
+          UPDATED_AT: new Date().toISOString()
+        });
+      } else {
+        scriptSetting.VALUE = defaultUrl;
+      }
+      this.setStorage(STORAGE_KEYS.SETTINGS, list);
+    }
+    return list;
   }
 
   getSettingsMap(): Record<string, string> {
@@ -354,6 +436,9 @@ class StoreService {
     }
     this.setStorage(STORAGE_KEYS.SETTINGS, list);
     this.addLog('AUDIT', 'UPDATE_SETTING', 'ADMIN', key, `Pengaturan ${key} diubah`);
+    
+    // Background sync to GAS
+    gasSync.syncSettings(list).catch(err => console.warn('Sync Setting Error:', err));
   }
 
   // Banners & Testimonials
@@ -379,7 +464,10 @@ class StoreService {
       list.push(saved);
     }
     this.setStorage(STORAGE_KEYS.BANNERS, list);
-    this.addLog('AUDIT', idx >= 0 ? 'UPDATE_BANNER' : 'CREATE_BANNER', 'ADMIN', saved.ID, `Banner promo '${saved.TITLE}' berhasil disimpan`);
+    this.addLog('AUDIT', idx >= 0 ? 'UPDATE_BANNER' : 'CREATE_BANNER', 'ADMIN', saved.ID, `Banner ${saved.TITLE} berhasil disimpan`);
+    
+    // Background sync to GAS
+    gasSync.syncBanner(saved).catch(err => console.warn('Sync Banner Error:', err));
     return saved;
   }
 
@@ -418,6 +506,9 @@ class StoreService {
     }
     this.setStorage(STORAGE_KEYS.TESTIMONIALS, list);
     this.addLog('AUDIT', idx >= 0 ? 'UPDATE_TESTIMONIAL' : 'CREATE_TESTIMONIAL', 'ADMIN', saved.ID, `Testimoni dari ${saved.CUSTOMER_NAME} berhasil disimpan`);
+    
+    // Background sync to GAS
+    gasSync.syncTestimonial(saved).catch(err => console.warn('Sync Testimonial Error:', err));
     return saved;
   }
 
@@ -438,9 +529,66 @@ class StoreService {
     const updated = settingsList.map(s => ({ ...s, UPDATED_AT: now }));
     this.setStorage(STORAGE_KEYS.SETTINGS, updated);
     this.addLog('AUDIT', 'BULK_UPDATE_SETTINGS', 'ADMIN', 'CONFIG', `Sebanyak ${updated.length} pengaturan toko berhasil disimpan dan disinkronkan`);
+    
+    // Sync all settings to Google Sheets
+    gasSync.syncSettings(updated).then(res => {
+      if (res.success) {
+        this.addLog('SYNC', 'SYNC_SETTINGS_SUCCESS', 'SYSTEM', 'CONFIG', 'Pengaturan toko berhasil disinkronkan ke Google Spreadsheet', 'SUCCESS');
+      }
+    }).catch(err => console.warn('Sync Settings Error:', err));
   }
 
-  // Force Save & Comprehensive Verification for Superadmin
+  /**
+   * Bulk Sync all local items to Google Sheets & Google Drive
+   */
+  async syncAllToCloudSpreadsheet(user = 'ffbonles@gmail.com'): Promise<{ success: boolean; message: string; details?: any }> {
+    const products = this.getProducts();
+    const categories = this.getCategories();
+    const banners = this.getBanners();
+    const testimonials = this.getTestimonials();
+    const settings = this.getSettings();
+    const orders = this.getOrders();
+    const customers = this.getCustomers();
+
+    try {
+      const res = await gasSync.pushAllDataToGoogleSheets({
+        products,
+        categories,
+        banners,
+        testimonials,
+        settings,
+        orders,
+        customers,
+      });
+
+      if (res.success) {
+        this.addLog('SYNC', 'BULK_SYNC_TO_CLOUD', user, 'GOOGLE_SPREADSHEET', `Sinkronisasi menyeluruh ke Spreadsheet berhasil: ${products.length} produk, ${categories.length} kategori, ${banners.length} banner, ${testimonials.length} testimoni.`, 'SUCCESS');
+        return {
+          success: true,
+          message: 'Seluruh data berhasil disinkronkan ke Google Spreadsheet & Google Drive!',
+          details: res.data || res,
+        };
+      } else {
+        this.addLog('ERROR', 'BULK_SYNC_TO_CLOUD_FAILED', user, 'GOOGLE_SPREADSHEET', `Gagal sinkronisasi ke Spreadsheet: ${res.message}`, 'FAILED');
+        return {
+          success: false,
+          message: res.message || 'Gagal mengirim data ke Google Spreadsheet.',
+          details: res,
+        };
+      }
+    } catch (err: any) {
+      this.addLog('ERROR', 'BULK_SYNC_TO_CLOUD_EXCEPTION', user, 'GOOGLE_SPREADSHEET', `Terjadi error jaringan: ${err.message}`, 'FAILED');
+      return {
+        success: false,
+        message: `Terjadi error saat sinkronisasi: ${err.message}`,
+        details: err,
+      };
+    }
+  }
+
+  /**
+   * Force Save & Comprehensive Verification for Superadmin
+   */
   forceSyncAndVerify(user = 'ffbonles@gmail.com'): {
     success: boolean;
     timestamp: string;
@@ -451,9 +599,9 @@ class StoreService {
     bannerCount: number;
     testimonialCount: number;
     message: string;
+    cloudSyncPromise: Promise<{ success: boolean; message: string; details?: any }>;
   } {
     const now = new Date();
-    const iso = now.toISOString();
     const timeFormatted = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     // Validate storage integrity
@@ -482,6 +630,9 @@ class StoreService {
       'SUCCESS'
     );
 
+    // Asynchronously trigger Cloud Sync to Google Sheets & Drive
+    const cloudSyncPromise = this.syncAllToCloudSpreadsheet(user);
+
     return {
       success: true,
       timestamp: timeFormatted,
@@ -491,7 +642,8 @@ class StoreService {
       orderCount: orders.length,
       bannerCount: banners.length,
       testimonialCount: testimonials.length,
-      message: `Semua data (${activeProds} produk aktif, ${categories.length} kategori, pengaturan toko) telah berhasil disimpan secara permanen dan langsung aktif di halaman website.`,
+      message: `Semua data (${activeProds} produk aktif, ${categories.length} kategori, pengaturan toko) telah tersimpan permanen di aplikasi dan sedang disinkronkan ke Google Spreadsheet.`,
+      cloudSyncPromise,
     };
   }
 
@@ -535,10 +687,10 @@ class StoreService {
     this.addLog('INFO', 'RESET_SAMPLE_DATA', 'ADMIN', 'SYSTEM', 'Data sistem di-reset ke sample default.');
   }
 
-  // Recently Viewed Tracking (Last 4 products clicked)
+  // Recently Viewed Tracking
   getRecentlyViewed(limit = 4): Product[] {
     const ids = this.getStorage<string[]>(STORAGE_KEYS.RECENTLY_VIEWED, []);
-    const allProducts = this.getProducts(true); // active products
+    const allProducts = this.getProducts(true);
     const result: Product[] = [];
 
     for (const id of ids) {
@@ -555,11 +707,8 @@ class StoreService {
     if (!productId) return this.getRecentlyViewed(limit);
     
     let ids = this.getStorage<string[]>(STORAGE_KEYS.RECENTLY_VIEWED, []);
-    // Remove if already present so it gets shifted to the front
     ids = ids.filter(id => id !== productId);
-    // Prepend to front
     ids.unshift(productId);
-    // Keep max 10 ids stored
     ids = ids.slice(0, 10);
     this.setStorage(STORAGE_KEYS.RECENTLY_VIEWED, ids);
 
@@ -570,7 +719,7 @@ class StoreService {
     this.setStorage(STORAGE_KEYS.RECENTLY_VIEWED, []);
   }
 
-  // WhatsApp Message Generator matching exact prompt template
+  // WhatsApp Message Generator
   generateWhatsAppLink(order: Order, waNumber: string): string {
     const cleanNumber = waNumber.replace(/\D/g, '');
     

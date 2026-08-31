@@ -10,6 +10,7 @@ import { Product, Category, Order, Customer, Setting, SystemLog, Banner, Testimo
 import { store } from '../../services/store';
 import { SUPERADMIN_CREDENTIALS } from '../../services/auth';
 import { APPS_SCRIPT_FILES } from '../../data/appsScriptCode';
+import { gasSync } from '../../services/gasSyncService';
 import { BonlesLogo } from '../BonlesLogo';
 import { ImageUploadOrUrl } from './ImageUploadOrUrl';
 
@@ -35,6 +36,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
   const [testimonials, setTestimonials] = useState<Testimonial[]>(() => store.getTestimonials());
   const [logs, setLogs] = useState<SystemLog[]>(() => store.getLogs());
 
+  // Cloud Sync states
+  const [cloudStatus, setCloudStatus] = useState<{
+    checking: boolean;
+    tested: boolean;
+    success: boolean;
+    message: string;
+    details?: any;
+  }>({
+    checking: false,
+    tested: false,
+    success: false,
+    message: '',
+  });
+  const [isBulkSyncing, setIsBulkSyncing] = useState<boolean>(false);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{
+    success: boolean;
+    message: string;
+    timestamp: string;
+  } | null>(null);
+
   // Save state indicators
   const [lastSavedTime, setLastSavedTime] = useState<string>(() => {
     return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
@@ -47,6 +68,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
     activeProductCount: number;
     categoryCount: number;
     message: string;
+    cloudStatusText?: string;
   } | null>(null);
 
   // Search & filter
@@ -120,27 +142,93 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
   };
 
   // Master Save & Publish All Changes (Guarantees Sync and Gives Superadmin Visual Proof)
-  const handleMasterSaveAndPublish = () => {
+  const handleMasterSaveAndPublish = async () => {
     setIsSaving(true);
-    setTimeout(() => {
-      // Save local settings if modified
-      if (localSettings && localSettings.length > 0) {
-        store.saveAllSettings(localSettings);
+    // Save local settings if modified
+    if (localSettings && localSettings.length > 0) {
+      store.saveAllSettings(localSettings);
+    }
+
+    const result = store.forceSyncAndVerify(SUPERADMIN_CREDENTIALS.USERNAME);
+    reloadData();
+
+    // Await cloud sync result
+    let cloudMsg = 'Mengirim data ke Google Spreadsheet & Google Drive...';
+    try {
+      const cloudRes = await result.cloudSyncPromise;
+      if (cloudRes.success) {
+        cloudMsg = 'Terekam di Google Spreadsheet & Google Drive (ID: AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw)';
+      } else {
+        cloudMsg = `Catatan: ${cloudRes.message}`;
       }
+    } catch {
+      cloudMsg = 'Data tersimpan di Web. Pastikan Apps Script Web App ID terhubung.';
+    }
 
-      const result = store.forceSyncAndVerify(SUPERADMIN_CREDENTIALS.USERNAME);
-      reloadData();
-      setIsSaving(false);
+    setIsSaving(false);
+    reloadData();
 
-      setSaveSuccessModal({
-        isOpen: true,
-        timestamp: result.timestamp + ' WIB',
-        productCount: result.productCount,
-        activeProductCount: result.activeProductCount,
-        categoryCount: result.categoryCount,
-        message: result.message,
-      });
-    }, 400);
+    setSaveSuccessModal({
+      isOpen: true,
+      timestamp: result.timestamp + ' WIB',
+      productCount: result.productCount,
+      activeProductCount: result.activeProductCount,
+      categoryCount: result.categoryCount,
+      message: result.message,
+      cloudStatusText: cloudMsg,
+    });
+  };
+
+  // Test Connection to Google Apps Script
+  const handleTestConnection = async () => {
+    setCloudStatus({
+      checking: true,
+      tested: true,
+      success: false,
+      message: 'Menghubungi Google Apps Script (ID: AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw)...',
+    });
+
+    const res = await gasSync.testConnection();
+    setCloudStatus({
+      checking: false,
+      tested: true,
+      success: res.success,
+      message: res.message,
+      details: res.details,
+    });
+    if (res.success) {
+      store.addLog('SYNC', 'TEST_GAS_SUCCESS', 'ADMIN', 'APPS_SCRIPT', 'Uji koneksi Google Apps Script & Spreadsheet BERHASIL aktif', 'SUCCESS');
+    } else {
+      store.addLog('ERROR', 'TEST_GAS_FAILED', 'ADMIN', 'APPS_SCRIPT', `Uji koneksi Google Apps Script GAGAL: ${res.message}`, 'FAILED');
+    }
+    reloadData();
+  };
+
+  // Bulk Push All Data to Google Spreadsheet
+  const handleBulkSyncNow = async () => {
+    setIsBulkSyncing(true);
+    setBulkSyncResult(null);
+    const res = await store.syncAllToCloudSpreadsheet(SUPERADMIN_CREDENTIALS.USERNAME);
+    setIsBulkSyncing(false);
+    setBulkSyncResult({
+      success: res.success,
+      message: res.message,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB',
+    });
+    reloadData();
+  };
+
+  // Initialize Database Sheets & Drive Structure
+  const handleInitDatabaseAndDrive = async () => {
+    setIsBulkSyncing(true);
+    const res = await gasSync.initializeSpreadsheet();
+    setIsBulkSyncing(false);
+    setBulkSyncResult({
+      success: res.success,
+      message: res.message || 'Inisialisasi 9 Sheet & Folder Drive selesai.',
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB',
+    });
+    reloadData();
   };
 
   // Handle Save Product
@@ -1410,6 +1498,91 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
                 </p>
               </div>
 
+              {/* Live Cloud Connection & Diagnostic Card */}
+              <div className="bg-[#161618] border border-[#C5A059]/30 rounded-sm p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                  <div>
+                    <span className="text-[10px] tracking-widest text-[#00D222] font-mono font-bold uppercase flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5" />
+                      Status Integrasi Google Apps Script
+                    </span>
+                    <h3 className="text-lg font-bold text-white mt-0.5">
+                      Spreadsheet & Google Drive Live Sync
+                    </h3>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={cloudStatus.checking}
+                      className="bg-[#1A1A1E] hover:bg-[#25252A] text-white border border-white/15 px-3.5 py-2 rounded-sm text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${cloudStatus.checking ? 'animate-spin' : ''}`} />
+                      <span>{cloudStatus.checking ? 'Menguji...' : 'Uji Koneksi'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleBulkSyncNow}
+                      disabled={isBulkSyncing}
+                      className="bg-[#C5A059] hover:bg-[#D4B06A] text-black font-bold px-4 py-2 rounded-sm text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md shadow-[#C5A059]/10"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isBulkSyncing ? 'Menyinkronkan...' : 'Sinkronkan Semua Data'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Connection Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-[#0A0A0B] border border-white/5 rounded-xs space-y-1 font-mono">
+                    <span className="text-[10px] text-[#777777] uppercase block font-sans">Deployment Web App ID Terpasang</span>
+                    <span className="text-[#C5A059] font-bold text-[11px] break-all">
+                      AKfycbz1Trz8B-_7yWWEOBTQOGeP6QOGP03RER4RMdxkfSDqr8V2XCO0wxYZ2PhOfyVQFISkvw
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-[#0A0A0B] border border-white/5 rounded-xs space-y-1">
+                    <span className="text-[10px] text-[#777777] uppercase block font-sans">Hasil Uji / Sinkronisasi</span>
+                    {cloudStatus.tested ? (
+                      <p className={`text-xs font-mono font-medium ${cloudStatus.success ? 'text-[#00D222]' : 'text-amber-400'}`}>
+                        {cloudStatus.message}
+                      </p>
+                    ) : bulkSyncResult ? (
+                      <p className={`text-xs font-mono font-medium ${bulkSyncResult.success ? 'text-[#00D222]' : 'text-amber-400'}`}>
+                        [{bulkSyncResult.timestamp}] {bulkSyncResult.message}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-[#888888]">
+                        Klik <strong>"Uji Koneksi"</strong> untuk memastikan Google Apps Script siap menerima data.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Important Authorization Warning */}
+                <div className="p-3.5 bg-amber-950/20 border border-amber-800/30 rounded-xs space-y-1.5 text-xs text-amber-200">
+                  <div className="flex items-center gap-2 font-bold text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span>PENTING: Mengapa Data Mungkin Belum Terekam di Google Drive / Spreadsheet?</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-[11px] text-[#DDDDDD] pl-1 leading-relaxed">
+                    <li>
+                      Pastikan di Google Apps Script saat <strong>Deploy → Manage deployments</strong>:
+                      <br />• <strong>Execute as</strong>: <strong className="text-white">Me (ffbonles@gmail.com)</strong>
+                      <br />• <strong>Who has access</strong>: <strong className="text-[#00D222]">Anyone</strong> (Jika disetel <em>Only myself</em>, browser tidak diizinkan mengirim data POST).
+                    </li>
+                    <li>
+                      Pastikan fungsi <strong>initializeBonlesSystem()</strong> di file <code>Code.gs</code> sudah di-klik <strong>Run</strong> sekali di Apps Script agar 9 Sheet & Folder Drive tercipta.
+                    </li>
+                    <li>
+                      Setelah mengubah kode di Apps Script editor, pastikan membuat <strong>New Version</strong> di menu Deploy!
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
               {/* Deployment Step Guide */}
               <div className="bg-[#161618] border border-white/10 rounded-sm p-6 space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-[#C5A059] flex items-center gap-2">
@@ -2053,6 +2226,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
               <p className="text-xs text-[#AAAAAA] mt-2 leading-relaxed">
                 {saveSuccessModal.message}
               </p>
+              {saveSuccessModal.cloudStatusText && (
+                <div className="mt-3 p-2.5 bg-[#0A0A0B] border border-white/10 rounded-xs text-[11px] text-left flex items-start gap-2">
+                  <Database className="w-4 h-4 text-[#C5A059] shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">Status Google Sheets & Drive:</span>
+                    <span className="text-[#AAAAAA] font-mono text-[10px] leading-tight">
+                      {saveSuccessModal.cloudStatusText}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-3 bg-[#0A0A0B] border border-white/10 rounded-xs grid grid-cols-3 gap-2 text-center text-xs">

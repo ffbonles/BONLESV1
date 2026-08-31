@@ -7,7 +7,7 @@ export interface ScriptFile {
 export const APPS_SCRIPT_FILES: ScriptFile[] = [
   {
     filename: 'Config.gs',
-    description: 'Konfigurasi terpusat nama sheet, folder Google Drive, durasi lock, dan cache backend.',
+    description: 'Konfigurasi terpusat nama sheet, folder Google Drive, durasi lock, dan parameter sistem.',
     code: `/**
  * PT. BONLES FOOD NUSANTARA
  * File: Config.gs - Konfigurasi Utama Google Apps Script
@@ -44,10 +44,10 @@ const CONFIG = {
   LOCK_TIMEOUT_MS: 15000,
   
   // Cache Time to Live (detik)
-  CACHE_TTL_SECONDS: 600, // 10 menit
+  CACHE_TTL_SECONDS: 600,
   
-  // Maksimal ukuran upload (5MB)
-  MAX_FILE_SIZE_BYTES: 5 * 1024 * 1024
+  // Maksimal ukuran upload (10MB)
+  MAX_FILE_SIZE_BYTES: 10 * 1024 * 1024
 };
 
 function getActiveSpreadsheet() {
@@ -104,7 +104,8 @@ function jsonResponse(data, success = true, message = "Data berhasil diproses") 
   const output = {
     success: success,
     message: message,
-    data: data
+    data: data,
+    timestamp: new Date().toISOString()
   };
   return ContentService.createTextOutput(JSON.stringify(output))
     .setMimeType(ContentService.MimeType.JSON);
@@ -114,7 +115,9 @@ function jsonError(message = "Terjadi kesalahan", statusCode = 400) {
   const output = {
     success: false,
     message: message,
-    data: null
+    data: null,
+    statusCode: statusCode,
+    timestamp: new Date().toISOString()
   };
   return ContentService.createTextOutput(JSON.stringify(output))
     .setMimeType(ContentService.MimeType.JSON);
@@ -133,52 +136,52 @@ function parseNumber(val, defaultVal = 0) {
   },
   {
     filename: 'Database.gs',
-    description: 'Inisialisasi otomatis semua sheet dan header, pembuatan data contoh (Sample Data), serta pengelolaan Settings.',
+    description: 'Inisialisasi otomatis seluruh sheet database, sinkronisasi massal (Bulk Sync), dan manajemen pengaturan.',
     code: `/**
  * PT. BONLES FOOD NUSANTARA
- * File: Database.gs - Skema Spreadsheet & Inisialisasi
+ * File: Database.gs - Skema Spreadsheet, Inisialisasi & Sinkronisasi
  */
+
+const SCHEMAS = {
+  [CONFIG.SHEETS.PRODUCTS]: [
+    "ID", "SKU", "NAME", "CATEGORY_ID", "CATEGORY_NAME", 
+    "CATEGORY_FOLDER_ID", "PRODUCT_FOLDER_ID", "PRICE", "DISCOUNT_PRICE", 
+    "WEIGHT", "STOCK", "DESCRIPTION", "COMPOSITION", "NUTRITION", 
+    "MAIN_IMAGE_FILE_ID", "MAIN_IMAGE_URL", "GALLERY_1_FILE_ID", "GALLERY_1_URL", 
+    "GALLERY_2_FILE_ID", "GALLERY_2_URL", "GALLERY_3_FILE_ID", "GALLERY_3_URL", 
+    "FEATURED", "ACTIVE", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.CATEGORIES]: [
+    "ID", "NAME", "DESCRIPTION", "IMAGE_FILE_ID", "IMAGE_URL", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.ORDERS]: [
+    "ORDER_ID", "ORDER_DATE", "CUSTOMER_ID", "CUSTOMER_NAME", "PHONE", "EMAIL", 
+    "ADDRESS", "CITY", "POSTAL_CODE", "PAYMENT_METHOD", "SHIPPING_METHOD", 
+    "SHIPPING_COST", "SUBTOTAL", "DISCOUNT", "TOTAL", "STATUS", "NOTES", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.ORDER_ITEMS]: [
+    "ORDER_ID", "PRODUCT_ID", "SKU", "PRODUCT_NAME", "PRICE", "QUANTITY", "SUBTOTAL"
+  ],
+  [CONFIG.SHEETS.CUSTOMERS]: [
+    "CUSTOMER_ID", "NAME", "PHONE", "EMAIL", "ADDRESS", "CITY", "POSTAL_CODE", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.SETTINGS]: [
+    "SETTING", "VALUE", "DESCRIPTION", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.BANNERS]: [
+    "ID", "TITLE", "SUBTITLE", "DESCRIPTION", "IMAGE_FILE_ID", "IMAGE_URL", "BUTTON_TEXT", "BUTTON_LINK", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.TESTIMONIALS]: [
+    "ID", "CUSTOMER_NAME", "MESSAGE", "PHOTO_FILE_ID", "PHOTO_URL", "RATING", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
+  ],
+  [CONFIG.SHEETS.SYSTEM_LOG]: [
+    "LOG_ID", "TIMESTAMP", "TYPE", "ACTION", "USER", "REFERENCE_ID", "MESSAGE", "STATUS"
+  ]
+};
 
 function setupDatabase() {
   const ss = getActiveSpreadsheet();
   
-  const SCHEMAS = {
-    [CONFIG.SHEETS.PRODUCTS]: [
-      "ID", "SKU", "NAME", "CATEGORY_ID", "CATEGORY_NAME", 
-      "CATEGORY_FOLDER_ID", "PRODUCT_FOLDER_ID", "PRICE", "DISCOUNT_PRICE", 
-      "WEIGHT", "STOCK", "DESCRIPTION", "COMPOSITION", "NUTRITION", 
-      "MAIN_IMAGE_FILE_ID", "MAIN_IMAGE_URL", "GALLERY_1_FILE_ID", "GALLERY_1_URL", 
-      "GALLERY_2_FILE_ID", "GALLERY_2_URL", "GALLERY_3_FILE_ID", "GALLERY_3_URL", 
-      "FEATURED", "ACTIVE", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.CATEGORIES]: [
-      "ID", "NAME", "DESCRIPTION", "IMAGE_FILE_ID", "IMAGE_URL", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.ORDERS]: [
-      "ORDER_ID", "ORDER_DATE", "CUSTOMER_ID", "CUSTOMER_NAME", "PHONE", "EMAIL", 
-      "ADDRESS", "CITY", "POSTAL_CODE", "PAYMENT_METHOD", "SHIPPING_METHOD", 
-      "SHIPPING_COST", "SUBTOTAL", "DISCOUNT", "TOTAL", "STATUS", "NOTES", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.ORDER_ITEMS]: [
-      "ORDER_ID", "PRODUCT_ID", "SKU", "PRODUCT_NAME", "PRICE", "QUANTITY", "SUBTOTAL"
-    ],
-    [CONFIG.SHEETS.CUSTOMERS]: [
-      "CUSTOMER_ID", "NAME", "PHONE", "EMAIL", "ADDRESS", "CITY", "POSTAL_CODE", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.SETTINGS]: [
-      "SETTING", "VALUE", "DESCRIPTION", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.BANNERS]: [
-      "ID", "TITLE", "SUBTITLE", "DESCRIPTION", "IMAGE_FILE_ID", "IMAGE_URL", "BUTTON_TEXT", "BUTTON_LINK", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.TESTIMONIALS]: [
-      "ID", "CUSTOMER_NAME", "MESSAGE", "PHOTO_FILE_ID", "PHOTO_URL", "RATING", "ACTIVE", "SORT_ORDER", "CREATED_AT", "UPDATED_AT"
-    ],
-    [CONFIG.SHEETS.SYSTEM_LOG]: [
-      "LOG_ID", "TIMESTAMP", "TYPE", "ACTION", "USER", "REFERENCE_ID", "MESSAGE", "STATUS"
-    ]
-  };
-
   for (const sheetName in SCHEMAS) {
     let sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
@@ -189,6 +192,17 @@ function setupDatabase() {
         .setBackground("#161618")
         .setFontColor("#C5A059");
       sheet.setFrozenRows(1);
+    } else {
+      // Pastikan header lengkap
+      const lastRow = sheet.getLastRow();
+      if (lastRow === 0) {
+        sheet.appendRow(SCHEMAS[sheetName]);
+        sheet.getRange(1, 1, 1, SCHEMAS[sheetName].length)
+          .setFontWeight("bold")
+          .setBackground("#161618")
+          .setFontColor("#C5A059");
+        sheet.setFrozenRows(1);
+      }
     }
   }
   
@@ -232,11 +246,158 @@ function getSettings() {
   }
   return settings;
 }
+
+function saveSettingsList(settingsList) {
+  setupDatabase();
+  const sheet = getSheet(CONFIG.SHEETS.SETTINGS);
+  if (!sheet || !settingsList || !settingsList.length) return false;
+  
+  const now = new Date().toISOString();
+  const existing = sheet.getDataRange().getValues();
+  
+  settingsList.forEach(s => {
+    const key = s.SETTING || s.setting;
+    const val = s.VALUE !== undefined ? s.VALUE : s.value;
+    const desc = s.DESCRIPTION || s.description || "";
+    
+    let found = false;
+    for (let i = 1; i < existing.length; i++) {
+      if (existing[i][0] === key) {
+        sheet.getRange(i + 1, 2).setValue(val);
+        sheet.getRange(i + 1, 3).setValue(desc);
+        sheet.getRange(i + 1, 4).setValue(now);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sheet.appendRow([key, val, desc, now]);
+    }
+  });
+  
+  logSystemEvent("AUDIT", "SAVE_SETTINGS", "ADMIN", "SETTINGS", "Pengaturan toko berhasil diperbarui", "SUCCESS");
+  return true;
+}
+
+/**
+ * Sinkronisasi Massal (Bulk Sync) seluruh data dari Web App ke Spreadsheet & Drive
+ */
+function syncAllDataFromApp(payload) {
+  setupDatabase();
+  setupDriveStructure();
+  
+  const result = {
+    productsSynced: 0,
+    categoriesSynced: 0,
+    bannersSynced: 0,
+    testimonialsSynced: 0,
+    settingsSynced: 0,
+    ordersSynced: 0
+  };
+  
+  // 1. Categories
+  if (payload.categories && Array.isArray(payload.categories)) {
+    const catSheet = getSheet(CONFIG.SHEETS.CATEGORIES);
+    // Kosongkan baris lama kecuali header
+    if (catSheet.getLastRow() > 1) {
+      catSheet.getRange(2, 1, catSheet.getLastRow() - 1, SCHEMAS[CONFIG.SHEETS.CATEGORIES].length).clearContent();
+    }
+    const catRows = payload.categories.map(c => [
+      c.ID, c.NAME, c.DESCRIPTION || "", c.IMAGE_FILE_ID || "", c.IMAGE_URL || "",
+      c.ACTIVE === true || c.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+      parseNumber(c.SORT_ORDER, 1),
+      c.CREATED_AT || new Date().toISOString(),
+      c.UPDATED_AT || new Date().toISOString()
+    ]);
+    if (catRows.length > 0) {
+      catSheet.getRange(2, 1, catRows.length, SCHEMAS[CONFIG.SHEETS.CATEGORIES].length).setValues(catRows);
+      result.categoriesSynced = catRows.length;
+    }
+  }
+  
+  // 2. Products
+  if (payload.products && Array.isArray(payload.products)) {
+    const prodSheet = getSheet(CONFIG.SHEETS.PRODUCTS);
+    if (prodSheet.getLastRow() > 1) {
+      prodSheet.getRange(2, 1, prodSheet.getLastRow() - 1, SCHEMAS[CONFIG.SHEETS.PRODUCTS].length).clearContent();
+    }
+    const prodRows = payload.products.map(p => [
+      p.ID, p.SKU, p.NAME, p.CATEGORY_ID, p.CATEGORY_NAME,
+      p.CATEGORY_FOLDER_ID || "", p.PRODUCT_FOLDER_ID || "",
+      parseNumber(p.PRICE, 0), parseNumber(p.DISCOUNT_PRICE, 0),
+      p.WEIGHT || "", parseNumber(p.STOCK, 0),
+      p.DESCRIPTION || "", p.COMPOSITION || "", p.NUTRITION || "",
+      p.MAIN_IMAGE_FILE_ID || "", p.MAIN_IMAGE_URL || "",
+      p.GALLERY_1_FILE_ID || "", p.GALLERY_1_URL || "",
+      p.GALLERY_2_FILE_ID || "", p.GALLERY_2_URL || "",
+      p.GALLERY_3_FILE_ID || "", p.GALLERY_3_URL || "",
+      p.FEATURED === true || p.FEATURED === "TRUE" ? "TRUE" : "FALSE",
+      p.ACTIVE === true || p.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+      p.CREATED_AT || new Date().toISOString(),
+      p.UPDATED_AT || new Date().toISOString()
+    ]);
+    if (prodRows.length > 0) {
+      prodSheet.getRange(2, 1, prodRows.length, SCHEMAS[CONFIG.SHEETS.PRODUCTS].length).setValues(prodRows);
+      result.productsSynced = prodRows.length;
+    }
+  }
+  
+  // 3. Banners
+  if (payload.banners && Array.isArray(payload.banners)) {
+    const bnrSheet = getSheet(CONFIG.SHEETS.BANNERS);
+    if (bnrSheet.getLastRow() > 1) {
+      bnrSheet.getRange(2, 1, bnrSheet.getLastRow() - 1, SCHEMAS[CONFIG.SHEETS.BANNERS].length).clearContent();
+    }
+    const bnrRows = payload.banners.map(b => [
+      b.ID, b.TITLE, b.SUBTITLE || "", b.DESCRIPTION || "",
+      b.IMAGE_FILE_ID || "", b.IMAGE_URL || "",
+      b.BUTTON_TEXT || "", b.BUTTON_LINK || "",
+      b.ACTIVE === true || b.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+      parseNumber(b.SORT_ORDER, 1),
+      b.CREATED_AT || new Date().toISOString(),
+      b.UPDATED_AT || new Date().toISOString()
+    ]);
+    if (bnrRows.length > 0) {
+      bnrSheet.getRange(2, 1, bnrRows.length, SCHEMAS[CONFIG.SHEETS.BANNERS].length).setValues(bnrRows);
+      result.bannersSynced = bnrRows.length;
+    }
+  }
+  
+  // 4. Testimonials
+  if (payload.testimonials && Array.isArray(payload.testimonials)) {
+    const tsmSheet = getSheet(CONFIG.SHEETS.TESTIMONIALS);
+    if (tsmSheet.getLastRow() > 1) {
+      tsmSheet.getRange(2, 1, tsmSheet.getLastRow() - 1, SCHEMAS[CONFIG.SHEETS.TESTIMONIALS].length).clearContent();
+    }
+    const tsmRows = payload.testimonials.map(t => [
+      t.ID, t.CUSTOMER_NAME, t.MESSAGE || "",
+      t.PHOTO_FILE_ID || "", t.PHOTO_URL || "",
+      parseNumber(t.RATING, 5),
+      t.ACTIVE === true || t.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+      parseNumber(t.SORT_ORDER, 1),
+      t.CREATED_AT || new Date().toISOString(),
+      t.UPDATED_AT || new Date().toISOString()
+    ]);
+    if (tsmRows.length > 0) {
+      tsmSheet.getRange(2, 1, tsmRows.length, SCHEMAS[CONFIG.SHEETS.TESTIMONIALS].length).setValues(tsmRows);
+      result.testimonialsSynced = tsmRows.length;
+    }
+  }
+  
+  // 5. Settings
+  if (payload.settings && Array.isArray(payload.settings)) {
+    saveSettingsList(payload.settings);
+    result.settingsSynced = payload.settings.length;
+  }
+  
+  logSystemEvent("SYNC", "BULK_SYNC", "ADMIN", "ALL_SHEETS", "Sinkronisasi menyeluruh berhasil: " + result.productsSynced + " produk, " + result.categoriesSynced + " kategori.", "SUCCESS");
+  return result;
+}
 `
   },
   {
     filename: 'DriveManager.gs',
-    description: 'Manajemen struktur Google Drive otomatis, folder Kategori, folder SKU Produk, upload file, dan audit integritas.',
+    description: 'Manajemen hierarki Google Drive otomatis, upload foto base64, dan pembuatan folder SKU.',
     code: `/**
  * PT. BONLES FOOD NUSANTARA
  * File: DriveManager.gs - Pengelolaan Google Drive
@@ -247,7 +408,9 @@ function getOrCreateRootFolder() {
   if (folders.hasNext()) {
     return folders.next();
   }
-  return DriveApp.createFolder(CONFIG.DRIVE_ROOT_FOLDER);
+  const folder = DriveApp.createFolder(CONFIG.DRIVE_ROOT_FOLDER);
+  folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return folder;
 }
 
 function setupDriveStructure() {
@@ -267,11 +430,13 @@ function setupDriveStructure() {
     if (existing.hasNext()) {
       folderMap[name] = existing.next();
     } else {
-      folderMap[name] = root.createFolder(name);
+      const f = root.createFolder(name);
+      f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      folderMap[name] = f;
     }
   });
   
-  logSystemEvent("INFO", "SETUP_DRIVE", "SYSTEM", root.getId(), "Struktur Google Drive berhasil dibuat.", "SUCCESS");
+  logSystemEvent("INFO", "SETUP_DRIVE", "SYSTEM", root.getId(), "Struktur Google Drive berhasil disiapkan.", "SUCCESS");
   return {
     rootId: root.getId(),
     subfolders: folderMap
@@ -286,6 +451,7 @@ function getOrCreateCategoryFolder(categoryName) {
     productsFolder = prodFolders.next();
   } else {
     productsFolder = root.createFolder(CONFIG.FOLDERS.PRODUCTS);
+    productsFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   }
   
   const cleanName = sanitizeString(categoryName) || "Uncategorized";
@@ -293,7 +459,9 @@ function getOrCreateCategoryFolder(categoryName) {
   if (catFolders.hasNext()) {
     return catFolders.next();
   }
-  return productsFolder.createFolder(cleanName);
+  const f = productsFolder.createFolder(cleanName);
+  f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return f;
 }
 
 function getOrCreateProductFolder(categoryName, sku) {
@@ -305,81 +473,49 @@ function getOrCreateProductFolder(categoryName, sku) {
   if (prodFolders.hasNext()) {
     return prodFolders.next();
   }
-  return catFolder.createFolder(cleanSku);
+  const f = catFolder.createFolder(cleanSku);
+  f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return f;
 }
 
 function uploadProductImage(categoryName, sku, base64Data, filename, imageSlot) {
+  setupDatabase();
   const targetFolder = getOrCreateProductFolder(categoryName, sku);
-  const decoded = Utilities.base64Decode(base64Data);
+  
+  let cleanBase64 = base64Data;
+  if (cleanBase64.indexOf("base64,") !== -1) {
+    cleanBase64 = cleanBase64.split("base64,")[1];
+  }
+  
+  const decoded = Utilities.base64Decode(cleanBase64);
   const blob = Utilities.newBlob(decoded, "image/jpeg", filename || (imageSlot + ".jpg"));
   
   const file = targetFolder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   
   const fileId = file.getId();
-  const directUrl = "https://drive.google.com/uc?export=view&id=" + fileId;
+  const directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
   
   logSystemEvent("AUDIT", "UPLOAD_IMAGE", "ADMIN", sku, "Upload " + imageSlot + " berhasil. ID: " + fileId, "SUCCESS");
   
   return {
     fileId: fileId,
-    url: directUrl
+    url: directUrl,
+    downloadUrl: "https://drive.google.com/uc?export=view&id=" + fileId
   };
-}
-
-function moveProductFolder(sku, oldCategoryName, newCategoryName) {
-  if (oldCategoryName === newCategoryName) return;
-  const oldCatFolder = getOrCreateCategoryFolder(oldCategoryName);
-  const newCatFolder = getOrCreateCategoryFolder(newCategoryName);
-  
-  const prodFolders = oldCatFolder.getFoldersByName(sku);
-  if (prodFolders.hasNext()) {
-    const prodFolder = prodFolders.next();
-    newCatFolder.addFolder(prodFolder);
-    oldCatFolder.removeFolder(prodFolder);
-    logSystemEvent("AUDIT", "MOVE_PRODUCT_FOLDER", "ADMIN", sku, "Folder " + sku + " dipindahkan ke " + newCategoryName, "SUCCESS");
-  }
-}
-
-function auditDriveStructure() {
-  const report = {
-    categoriesChecked: 0,
-    productsChecked: 0,
-    missingFolders: [],
-    missingImages: [],
-    orphanFolders: []
-  };
-  
-  const sheet = getSheet(CONFIG.SHEETS.PRODUCTS);
-  if (!sheet) return report;
-  
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    const sku = rows[i][1];
-    const name = rows[i][2];
-    const catName = rows[i][4];
-    const mainImgId = rows[i][14];
-    
-    report.productsChecked++;
-    if (!mainImgId) {
-      report.missingImages.push({ sku: sku, name: name });
-    }
-  }
-  
-  logSystemEvent("AUDIT", "DRIVE_AUDIT", "ADMIN", "-", "Audit Drive selesai. Missing images: " + report.missingImages.length, "SUCCESS");
-  return report;
 }
 `
   },
   {
     filename: 'Products.gs',
-    description: 'Operasi pembacaan, filtering, pembaruan data produk dan sinkronisasi harga/stok.',
+    description: 'Operasi pembacaan, penambahan, pembaruan, dan penghapusan produk di Spreadsheet.',
     code: `/**
  * PT. BONLES FOOD NUSANTARA
  * File: Products.gs - Logika Produk & Katalog
  */
 
 function getProducts(onlyActive = true) {
+  setupDatabase();
   const sheet = getSheet(CONFIG.SHEETS.PRODUCTS);
   if (!sheet) return [];
   
@@ -422,6 +558,79 @@ function getProduct(productIdOrSku) {
   }
   return null;
 }
+
+function saveProductToSheet(prod, imageBase64) {
+  setupDatabase();
+  const sheet = getSheet(CONFIG.SHEETS.PRODUCTS);
+  if (!sheet || !prod) throw new Error("Data produk tidak valid");
+  
+  // Jika ada upload gambar baru dalam bentuk base64
+  let mainImgUrl = prod.MAIN_IMAGE_URL || "";
+  let mainImgId = prod.MAIN_IMAGE_FILE_ID || "";
+  
+  if (imageBase64 && imageBase64.length > 50) {
+    try {
+      const uploaded = uploadProductImage(prod.CATEGORY_NAME || "Snack", prod.SKU, imageBase64, prod.SKU + "-main.jpg", "main");
+      if (uploaded && uploaded.url) {
+        mainImgUrl = uploaded.url;
+        mainImgId = uploaded.fileId;
+      }
+    } catch (e) {
+      console.warn("Gagal upload gambar ke Drive:", e);
+    }
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  const now = new Date().toISOString();
+  const id = prod.ID || ("PRD-" + Utilities.formatString("%04d", Math.max(1, data.length)));
+  
+  const rowData = [
+    id,
+    prod.SKU,
+    prod.NAME,
+    prod.CATEGORY_ID || "CAT-001",
+    prod.CATEGORY_NAME || "Snack",
+    prod.CATEGORY_FOLDER_ID || "",
+    prod.PRODUCT_FOLDER_ID || "",
+    parseNumber(prod.PRICE, 0),
+    parseNumber(prod.DISCOUNT_PRICE, 0),
+    prod.WEIGHT || "",
+    parseNumber(prod.STOCK, 0),
+    prod.DESCRIPTION || "",
+    prod.COMPOSITION || "",
+    prod.NUTRITION || "",
+    mainImgId,
+    mainImgUrl,
+    prod.GALLERY_1_FILE_ID || "",
+    prod.GALLERY_1_URL || "",
+    prod.GALLERY_2_FILE_ID || "",
+    prod.GALLERY_2_URL || "",
+    prod.GALLERY_3_FILE_ID || "",
+    prod.GALLERY_3_URL || "",
+    prod.FEATURED === true || prod.FEATURED === "TRUE" ? "TRUE" : "FALSE",
+    prod.ACTIVE === true || prod.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+    prod.CREATED_AT || now,
+    now
+  ];
+  
+  let foundRow = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === id || data[i][1] === prod.SKU) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+  
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
+    logSystemEvent("AUDIT", "UPDATE_PRODUCT", "ADMIN", prod.SKU, "Produk " + prod.NAME + " berhasil diperbarui", "SUCCESS");
+  } else {
+    sheet.appendRow(rowData);
+    logSystemEvent("AUDIT", "CREATE_PRODUCT", "ADMIN", prod.SKU, "Produk baru " + prod.NAME + " berhasil dibuat", "SUCCESS");
+  }
+  
+  return { ...prod, ID: id, MAIN_IMAGE_URL: mainImgUrl, MAIN_IMAGE_FILE_ID: mainImgId, UPDATED_AT: now };
+}
 `
   },
   {
@@ -438,11 +647,43 @@ function generateOrderId() {
   return "ORD-" + dateStr + "-" + randomSuffix;
 }
 
+function getOrders() {
+  setupDatabase();
+  const sheet = getSheet(CONFIG.SHEETS.ORDERS);
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const h = data[0];
+  const orders = [];
+  for (let i = 1; i < data.length; i++) {
+    const o = {};
+    for (let j = 0; j < h.length; j++) o[h[j]] = data[i][j];
+    orders.push(o);
+  }
+  return orders;
+}
+
+function updateOrderStatusInSheet(orderId, newStatus) {
+  setupDatabase();
+  const sheet = getSheet(CONFIG.SHEETS.ORDERS);
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === orderId) {
+      sheet.getRange(i + 1, 16).setValue(newStatus);
+      sheet.getRange(i + 1, 19).setValue(new Date().toISOString());
+      logSystemEvent("AUDIT", "UPDATE_ORDER_STATUS", "ADMIN", orderId, "Status diubah menjadi " + newStatus, "SUCCESS");
+      return true;
+    }
+  }
+  return false;
+}
+
 function createOrder(orderPayload) {
+  setupDatabase();
   const lock = LockService.getScriptLock();
   
   try {
-    // 1. Dapatkan script lock untuk mencegah race condition
     lock.waitLock(CONFIG.LOCK_TIMEOUT_MS);
     
     const prodSheet = getSheet(CONFIG.SHEETS.PRODUCTS);
@@ -460,7 +701,6 @@ function createOrder(orderPayload) {
       throw new Error("Keranjang belanja kosong.");
     }
     
-    // 2. Baca stok & harga segar dari database (Jangan percaya harga dari frontend!)
     const prodData = prodSheet.getDataRange().getValues();
     const prodHeaders = prodData[0];
     const idIdx = prodHeaders.indexOf("ID");
@@ -485,7 +725,7 @@ function createOrder(orderPayload) {
       }
       
       if (foundRow === -1) {
-        throw new Error("Produk dengan ID " + item.product_id + " tidak ditemukan.");
+        throw new Error("Produk dengan ID " + (item.product_id || item.sku) + " tidak ditemukan.");
       }
       
       const rowData = prodData[foundRow];
@@ -515,27 +755,23 @@ function createOrder(orderPayload) {
         subtotal: lineSubtotal
       });
       
-      // Catat pemotongan stok
       stockUpdates.push({
-        row: foundRow + 1, // 1-based index
+        row: foundRow + 1,
         col: stockIdx + 1,
         newStock: currentStock - reqQty
       });
     }
     
-    // 3. Hitung ongkir dan total resmi
     const settings = getSettings();
     const defaultShipping = parseNumber(settings.DEFAULT_SHIPPING_COST, 15000);
     const shippingCost = (orderPayload.shipping_cost !== undefined) ? parseNumber(orderPayload.shipping_cost, defaultShipping) : defaultShipping;
     const discount = 0;
     const total = subtotal - discount + shippingCost;
     
-    // 4. Generate Order ID unik
     const orderId = generateOrderId();
     const now = new Date().toISOString();
     
-    // 5. Simpan / Cari Customer (Deduplikasi WhatsApp)
-    let customerId = "CUST-" + Utilities.formatString("%04d", custSheet.getLastRow());
+    let customerId = "CUST-" + Utilities.formatString("%04d", Math.max(1, custSheet.getLastRow()));
     let existingCustRow = -1;
     const custData = custSheet.getDataRange().getValues();
     for (let c = 1; c < custData.length; c++) {
@@ -559,13 +795,11 @@ function createOrder(orderPayload) {
         now
       ]);
     } else {
-      // Update alamat terakhir
       custSheet.getRange(existingCustRow + 1, 5).setValue(customer.address || "");
       custSheet.getRange(existingCustRow + 1, 6).setValue(customer.city || "");
       custSheet.getRange(existingCustRow + 1, 9).setValue(now);
     }
     
-    // 6. Simpan Induk Pesanan (Orders)
     orderSheet.appendRow([
       orderId,
       now,
@@ -588,7 +822,6 @@ function createOrder(orderPayload) {
       now
     ]);
     
-    // 7. Simpan Rincian Pesanan (Order_Items)
     validatedItems.forEach(vi => {
       itemsSheet.appendRow([
         orderId,
@@ -601,13 +834,11 @@ function createOrder(orderPayload) {
       ]);
     });
     
-    // 8. Eksekusi Pengurangan Stok Produk
     stockUpdates.forEach(su => {
       prodSheet.getRange(su.row, su.col).setValue(su.newStock);
     });
     
-    // 9. Catat Log Audit
-    logSystemEvent("AUDIT", "CREATE_ORDER", "CUSTOMER", orderId, "Pesanan baru berhasil dibuat senilai Rp " + total, "SUCCESS");
+    logSystemEvent("AUDIT", "CREATE_ORDER", "CUSTOMER", orderId, "Pesanan baru dibuat senilai Rp " + total, "SUCCESS");
     
     return {
       orderId: orderId,
@@ -631,10 +862,10 @@ function createOrder(orderPayload) {
   },
   {
     filename: 'Code.gs',
-    description: 'Dispatcher utama doGet(e) & doPost(e) untuk melayani API JSON bagi frontend web.',
+    description: 'Dispatcher utama API GET & POST untuk melayani Web App, sinkronisasi massal, dan inisialisasi sistem.',
     code: `/**
  * PT. BONLES FOOD NUSANTARA
- * File: Code.gs - API Routing Entrypoint
+ * File: Code.gs - API Routing Entrypoint (GET & POST)
  */
 
 function doGet(e) {
@@ -644,6 +875,9 @@ function doGet(e) {
     switch (action) {
       case "getProducts":
         return jsonResponse(getProducts(true), true, "Katalog produk berhasil dimuat");
+        
+      case "getAllProducts":
+        return jsonResponse(getProducts(false), true, "Seluruh produk berhasil dimuat");
         
       case "getProduct":
         const id = e.parameter.id || e.parameter.sku;
@@ -659,7 +893,7 @@ function doGet(e) {
           for (let i = 1; i < catData.length; i++) {
             const item = {};
             for (let j = 0; j < h.length; j++) item[h[j]] = catData[i][j];
-            if (item.ACTIVE === true || item.ACTIVE === "TRUE") categories.push(item);
+            categories.push(item);
           }
         }
         return jsonResponse(categories, true, "Kategori berhasil dimuat");
@@ -668,6 +902,7 @@ function doGet(e) {
         return jsonResponse(getSettings(), true, "Pengaturan toko dimuat");
         
       case "getDashboardSummary":
+        setupDatabase();
         const prods = getProducts(false);
         const orderSheet = getSheet(CONFIG.SHEETS.ORDERS);
         const orderData = orderSheet ? orderSheet.getDataRange().getValues() : [];
@@ -688,12 +923,31 @@ function doGet(e) {
           pendingOrders: pendingOrders,
           totalSales: totalSales
         };
-        return jsonResponse(summary, true);
+        return jsonResponse(summary, true, "Dashboard summary berhasil dimuat");
+        
+      case "syncAll":
+        return jsonResponse({
+          products: getProducts(false),
+          categories: (function() {
+            const s = getSheet(CONFIG.SHEETS.CATEGORIES);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          settings: getSettings(),
+          orders: getOrders()
+        }, true, "Seluruh data tersinkronisasi");
         
       case "init":
         setupDatabase();
         setupDriveStructure();
-        return jsonResponse({ status: "initialized" }, true, "Sistem Bonles Food berhasil diinisialisasi");
+        return jsonResponse({ status: "initialized" }, true, "Sistem Bonles Food Nusantara berhasil diinisialisasi");
         
       default:
         return jsonError("Action tidak dikenali: " + action);
@@ -705,13 +959,65 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    const postData = (e && e.postData && e.postData.contents) ? JSON.parse(e.postData.contents) : {};
-    const action = postData.action || (e && e.parameter && e.parameter.action);
+    let postData = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (err) {
+        postData = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      postData = e.parameter;
+    }
+    
+    const action = postData.action;
     
     switch (action) {
+      case "syncAllData":
+        const syncRes = syncAllDataFromApp(postData.payload || postData);
+        return jsonResponse(syncRes, true, "Seluruh data berhasil disinkronkan ke Google Spreadsheet & Drive");
+        
+      case "saveProduct":
+        const savedProd = saveProductToSheet(postData.product, postData.imageBase64);
+        return jsonResponse(savedProd, true, "Produk berhasil disimpan ke Spreadsheet & Google Drive");
+        
+      case "saveCategory":
+        setupDatabase();
+        const catSheet = getSheet(CONFIG.SHEETS.CATEGORIES);
+        const cat = postData.category;
+        const now = new Date().toISOString();
+        const catData = catSheet.getDataRange().getValues();
+        let catFound = -1;
+        for (let i = 1; i < catData.length; i++) {
+          if (catData[i][0] === cat.ID || catData[i][1] === cat.NAME) {
+            catFound = i + 1;
+            break;
+          }
+        }
+        const catRow = [
+          cat.ID, cat.NAME, cat.DESCRIPTION || "", cat.IMAGE_FILE_ID || "", cat.IMAGE_URL || "",
+          cat.ACTIVE === true || cat.ACTIVE === "TRUE" ? "TRUE" : "FALSE",
+          parseNumber(cat.SORT_ORDER, 1),
+          cat.CREATED_AT || now, now
+        ];
+        if (catFound > 0) {
+          catSheet.getRange(catFound, 1, 1, catRow.length).setValues([catRow]);
+        } else {
+          catSheet.appendRow(catRow);
+        }
+        return jsonResponse(cat, true, "Kategori berhasil disimpan ke Spreadsheet");
+        
+      case "saveSettings":
+        saveSettingsList(postData.settings);
+        return jsonResponse({ updated: true }, true, "Pengaturan toko berhasil disimpan ke Spreadsheet");
+        
       case "createOrder":
         const result = createOrder(postData);
-        return jsonResponse(result, true, "Pesanan berhasil dibuat");
+        return jsonResponse(result, true, "Pesanan berhasil dibuat dan dicatat di Spreadsheet");
+        
+      case "updateOrderStatus":
+        const updatedStatus = updateOrderStatusInSheet(postData.orderId, postData.status);
+        return jsonResponse({ updated: updatedStatus }, true, "Status pesanan berhasil diperbarui");
         
       case "uploadImage":
         const imgResult = uploadProductImage(
@@ -722,6 +1028,14 @@ function doPost(e) {
           postData.imageSlot || "main"
         );
         return jsonResponse(imgResult, true, "Foto berhasil diunggah ke Google Drive");
+        
+      case "init":
+        setupDatabase();
+        setupDriveStructure();
+        return jsonResponse({ status: "initialized" }, true, "Inisialisasi Database & Drive berhasil!");
+        
+      case "ping":
+        return jsonResponse({ status: "ok", timestamp: new Date().toISOString() }, true, "Web App aktif dan siap menerima data");
         
       default:
         return jsonError("Action POST tidak valid: " + action);
@@ -735,7 +1049,7 @@ function initializeBonlesSystem() {
   setupDatabase();
   setupDriveStructure();
   logSystemEvent("INFO", "INITIALIZE_SYSTEM", "ADMIN", "ALL", "Inisialisasi sistem lengkap berhasil dijalankan.", "SUCCESS");
-  return "Inisialisasi PT. Bonles Food Nusantara berhasil!";
+  return "Inisialisasi PT. Bonles Food Nusantara berhasil! 9 Sheets dan Folder Google Drive siap digunakan.";
 }
 `
   }
