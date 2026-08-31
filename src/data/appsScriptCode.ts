@@ -221,9 +221,9 @@ function setupDefaultSettings() {
     const defaults = [
       ["STORE_NAME", "PT. BONLES FOOD NUSANTARA", "Nama resmi entitas bisnis", now],
       ["TAGLINE", "Snack Tinggi Protein & Oleh-Oleh Khas Nusantara", "Slogan dan positioning produk", now],
-      ["WHATSAPP_NUMBER", "6281234567890", "Nomor WhatsApp admin pemesanan", now],
-      ["STORE_EMAIL", "bonlesfoodnusantara@gmail.com", "Alamat email resmi", now],
-      ["STORE_ADDRESS", "Sentra Industri Pangan Nusantara, Indonesia", "Alamat toko", now],
+      ["WHATSAPP_NUMBER", "6285174333902", "Nomor WhatsApp admin pemesanan (+6285174333902)", now],
+      ["STORE_EMAIL", "bonlesff@gmail.com", "Alamat email resmi", now],
+      ["STORE_ADDRESS", "Jl. MT. Haryono Gg. Mufakat II No.84 Balikpapan Selatan", "Alamat toko & sentra produksi", now],
       ["CURRENCY", "IDR", "Mata uang transaksi", now],
       ["SHIPPING_ENABLED", "TRUE", "Status layanan pengiriman ekspedisi", now],
       ["DEFAULT_SHIPPING_COST", "15000", "Estimasi ongkir standar", now]
@@ -926,6 +926,7 @@ function doGet(e) {
         return jsonResponse(summary, true, "Dashboard summary berhasil dimuat");
         
       case "syncAll":
+      case "pullAllData":
         return jsonResponse({
           products: getProducts(false),
           categories: (function() {
@@ -941,7 +942,43 @@ function doGet(e) {
             });
           })(),
           settings: getSettings(),
-          orders: getOrders()
+          banners: (function() {
+            const s = getSheet(CONFIG.SHEETS.BANNERS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          testimonials: (function() {
+            const s = getSheet(CONFIG.SHEETS.TESTIMONIALS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          orders: getOrders(),
+          customers: (function() {
+            const s = getSheet(CONFIG.SHEETS.CUSTOMERS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })()
         }, true, "Seluruh data tersinkronisasi");
         
       case "init":
@@ -973,6 +1010,62 @@ function doPost(e) {
     const action = postData.action;
     
     switch (action) {
+      case "syncAll":
+      case "pullAllData":
+        return jsonResponse({
+          products: getProducts(false),
+          categories: (function() {
+            const s = getSheet(CONFIG.SHEETS.CATEGORIES);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          settings: getSettings(),
+          banners: (function() {
+            const s = getSheet(CONFIG.SHEETS.BANNERS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          testimonials: (function() {
+            const s = getSheet(CONFIG.SHEETS.TESTIMONIALS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })(),
+          orders: getOrders(),
+          customers: (function() {
+            const s = getSheet(CONFIG.SHEETS.CUSTOMERS);
+            if (!s) return [];
+            const d = s.getDataRange().getValues();
+            if (d.length <= 1) return [];
+            const h = d[0];
+            return d.slice(1).map(r => {
+              const o = {};
+              h.forEach((k, idx) => o[k] = r[idx]);
+              return o;
+            });
+          })()
+        }, true, "Seluruh data tersinkronisasi");
+
       case "syncAllData":
         const syncRes = syncAllDataFromApp(postData.payload || postData);
         return jsonResponse(syncRes, true, "Seluruh data berhasil disinkronkan ke Google Spreadsheet & Drive");

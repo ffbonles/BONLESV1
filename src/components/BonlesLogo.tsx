@@ -164,7 +164,7 @@ export const BonlesLogo: React.FC<BonlesLogoProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-[#C5A059] font-bold">
+          <span className="text-[9px] uppercase tracking-[0.2em] text-[#F5A623] font-bold">
             PT. Bonles Food Nusantara
           </span>
           <span className="w-1.5 h-1.5 rounded-full bg-[#00D222]" />

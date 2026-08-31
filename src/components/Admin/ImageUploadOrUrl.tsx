@@ -138,14 +138,14 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
         </label>
 
         {/* Mode Switcher Tabs */}
-        <div className="inline-flex rounded-xs bg-[#0A0A0B] p-0.5 border border-white/10 text-[10px]">
+        <div className="inline-flex rounded-xs bg-[#140507] p-0.5 border border-[#D82824]/20 text-[10px]">
           <button
             type="button"
             onClick={() => setMode('upload')}
             className={`px-2.5 py-1 rounded-xs transition-colors cursor-pointer flex items-center gap-1 ${
               mode === 'upload'
-                ? 'bg-[#C5A059] text-black font-bold'
-                : 'text-[#888888] hover:text-white'
+                ? 'bg-[#F5A623] text-black font-bold'
+                : 'text-[#A89886] hover:text-white'
             }`}
           >
             <Upload className="w-3 h-3" />
@@ -156,8 +156,8 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
             onClick={() => setMode('url')}
             className={`px-2.5 py-1 rounded-xs transition-colors cursor-pointer flex items-center gap-1 ${
               mode === 'url'
-                ? 'bg-[#C5A059] text-black font-bold'
-                : 'text-[#888888] hover:text-white'
+                ? 'bg-[#F5A623] text-black font-bold'
+                : 'text-[#A89886] hover:text-white'
             }`}
           >
             <Link2 className="w-3 h-3" />
@@ -175,8 +175,8 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
           onClick={() => fileInputRef.current?.click()}
           className={`relative border-2 border-dashed rounded-sm p-4 text-center cursor-pointer transition-all duration-200 ${
             isDragging
-              ? 'border-[#C5A059] bg-[#C5A059]/10'
-              : 'border-white/15 hover:border-[#C5A059]/50 bg-[#0A0A0B]/60 hover:bg-[#0A0A0B]'
+              ? 'border-[#F5A623] bg-[#F5A623]/10'
+              : 'border-[#D82824]/30 hover:border-[#F5A623]/60 bg-[#140507]/60 hover:bg-[#140507]'
           }`}
         >
           <input
@@ -188,9 +188,9 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
           />
 
           <div className="flex flex-col items-center justify-center space-y-1.5 pointer-events-none">
-            <div className="w-9 h-9 rounded-full bg-[#1A1A1E] border border-white/10 flex items-center justify-center text-[#C5A059]">
+            <div className="w-9 h-9 rounded-full bg-[#240A0E] border border-[#D82824]/30 flex items-center justify-center text-[#F5A623]">
               {isProcessing ? (
-                <RefreshCw className="w-4 h-4 animate-spin text-[#C5A059]" />
+                <RefreshCw className="w-4 h-4 animate-spin text-[#F5A623]" />
               ) : (
                 <Upload className="w-4 h-4" />
               )}
@@ -200,32 +200,32 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
                 ? 'Memproses gambar...'
                 : 'Klik untuk pilih foto atau drag & drop ke sini'}
             </p>
-            <p className="text-[10px] text-[#777777]">PNG, JPG, WEBP, GIF (Maks. 10MB)</p>
+            <p className="text-[10px] text-[#A89886]">PNG, JPG, WEBP, GIF (Maks. 10MB)</p>
           </div>
         </div>
       ) : (
         <div className="space-y-1.5">
           <div className="relative">
-            <Link2 className="w-4 h-4 text-[#888888] absolute left-3 top-1/2 -translate-y-1/2" />
+            <Link2 className="w-4 h-4 text-[#A89886] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="url"
               value={urlInput}
               onChange={handleUrlChange}
               placeholder={placeholder}
-              className="w-full bg-[#0A0A0B] border border-white/10 focus:border-[#C5A059] rounded-sm pl-9 pr-8 py-2 text-xs text-white placeholder-[#555555] focus:outline-none transition-colors"
+              className="w-full bg-[#140507] border border-[#D82824]/30 focus:border-[#F5A623] rounded-sm pl-9 pr-8 py-2 text-xs text-white placeholder-[#887766] focus:outline-none transition-colors"
             />
             {urlInput && (
               <button
                 type="button"
                 onClick={handleClearImage}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#888888] hover:text-white"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#A89886] hover:text-white"
                 title="Hapus URL"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          <p className="text-[10px] text-[#777777]">
+          <p className="text-[10px] text-[#A89886]">
             Tips: Mendukung link publik Google Drive, CDN, Imgur, atau link website.
           </p>
         </div>
@@ -233,9 +233,9 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
 
       {/* Live Preview Box */}
       {value ? (
-        <div className="mt-2 p-2.5 bg-[#121214] border border-white/10 rounded-sm flex items-center justify-between gap-3">
+        <div className="mt-2 p-2.5 bg-[#1C070B] border border-[#D82824]/30 rounded-sm flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="relative w-14 h-14 shrink-0 rounded-xs overflow-hidden border border-white/15 bg-black">
+            <div className="relative w-14 h-14 shrink-0 rounded-xs overflow-hidden border border-[#D82824]/30 bg-black">
               {!previewError ? (
                 <img
                   src={value}
@@ -262,7 +262,7 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
                   {isBase64 ? 'Uploaded File' : 'URL Link'}
                 </span>
               </div>
-              <p className="text-[10px] text-[#888888] truncate max-w-xs font-mono">
+              <p className="text-[10px] text-[#A89886] truncate max-w-xs font-mono">
                 {isBase64 ? 'Local Image (Base64 Encoded)' : value}
               </p>
             </div>
@@ -274,7 +274,7 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
                 href={value}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 bg-[#1A1A1E] hover:bg-[#25252A] text-[#C5A059] border border-white/10 rounded-xs text-[10px] transition-colors"
+                className="p-1.5 bg-[#240A0E] hover:bg-[#340E14] text-[#F5A623] border border-[#D82824]/30 rounded-xs text-[10px] transition-colors"
                 title="Buka foto di tab baru"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -291,7 +291,7 @@ export const ImageUploadOrUrl: React.FC<ImageUploadOrUrlProps> = ({
           </div>
         </div>
       ) : (
-        <p className="text-[10px] text-[#666666] italic">{helperText}</p>
+        <p className="text-[10px] text-[#A89886] italic">{helperText}</p>
       )}
     </div>
   );

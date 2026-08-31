@@ -218,6 +218,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
     reloadData();
   };
 
+  // Pull Live Data from Google Spreadsheet into Web
+  const handlePullFromSpreadsheet = async () => {
+    setIsBulkSyncing(true);
+    setBulkSyncResult(null);
+    const res = await store.pullFromCloudSpreadsheet(SUPERADMIN_CREDENTIALS.USERNAME);
+    setIsBulkSyncing(false);
+    setBulkSyncResult({
+      success: res.success,
+      message: res.message,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB',
+    });
+    reloadData();
+  };
+
   // Initialize Database Sheets & Drive Structure
   const handleInitDatabaseAndDrive = async () => {
     setIsBulkSyncing(true);
@@ -331,6 +345,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={handlePullFromSpreadsheet}
+            disabled={isBulkSyncing || isSaving}
+            className="bg-[#1A1A1E] hover:bg-[#25252A] text-[#00D222] border border-[#00D222]/40 hover:border-[#00D222] font-semibold px-3 py-1.5 rounded-sm text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+            title="Tarik dan muat data langsung dari Google Spreadsheet ke web"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isBulkSyncing ? 'animate-spin' : ''}`} />
+            <span>{isBulkSyncing ? 'Menarik...' : 'Tarik dari Spreadsheet'}</span>
+          </button>
+
           <button
             onClick={handleMasterSaveAndPublish}
             disabled={isSaving}
@@ -1371,13 +1395,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
                   </p>
                 </div>
 
-                <button
-                  onClick={handleSaveSettingsSubmit}
-                  className="bg-[#C5A059] hover:bg-[#D4B06A] text-black font-bold px-4 py-2 rounded-sm text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-[#C5A059]/10"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Simpan Semua Pengaturan</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handlePullFromSpreadsheet();
+                      setLocalSettings(store.getSettings());
+                    }}
+                    disabled={isBulkSyncing}
+                    className="bg-[#1A1A1E] hover:bg-[#25252A] text-[#00D222] border border-[#00D222]/40 hover:border-[#00D222] font-semibold px-3.5 py-2 rounded-sm text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isBulkSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isBulkSyncing ? 'Menarik...' : 'Tarik dari Spreadsheet'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleSaveSettingsSubmit}
+                    className="bg-[#C5A059] hover:bg-[#D4B06A] text-black font-bold px-4 py-2 rounded-sm text-xs flex items-center gap-2 cursor-pointer shadow-md shadow-[#C5A059]/10"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Simpan Semua Pengaturan</span>
+                  </button>
+                </div>
               </div>
 
               <form onSubmit={handleSaveSettingsSubmit} className="bg-[#161618] border border-white/10 rounded-sm p-6 space-y-4">
@@ -1524,12 +1563,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
 
                     <button
                       type="button"
+                      onClick={handlePullFromSpreadsheet}
+                      disabled={isBulkSyncing}
+                      className="bg-[#1A1A1E] hover:bg-[#25252A] text-[#00D222] border border-[#00D222]/40 hover:border-[#00D222] font-semibold px-3.5 py-2 rounded-sm text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isBulkSyncing ? 'animate-spin' : ''}`} />
+                      <span>{isBulkSyncing ? 'Menarik...' : 'Tarik dari Spreadsheet'}</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleBulkSyncNow}
                       disabled={isBulkSyncing}
                       className="bg-[#C5A059] hover:bg-[#D4B06A] text-black font-bold px-4 py-2 rounded-sm text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md shadow-[#C5A059]/10"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      <span>{isBulkSyncing ? 'Menyinkronkan...' : 'Sinkronkan Semua Data'}</span>
+                      <span>{isBulkSyncing ? 'Menyinkronkan...' : 'Kirim Semua ke Spreadsheet'}</span>
                     </button>
                   </div>
                 </div>

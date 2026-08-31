@@ -221,18 +221,41 @@ class GasSyncService {
   }
 
   /**
-   * Pull ALL data from Google Sheets into local memory
+   * Pull ALL data from Google Sheets into local memory with resilient GET and POST fallback
    */
   async pullAllDataFromGoogleSheets(): Promise<GasApiResponse<{
-    products: Product[];
-    categories: Category[];
-    banners: Banner[];
-    testimonials: Testimonial[];
-    settings: Record<string, string>;
-    orders: Order[];
-    customers: Customer[];
+    products: any[];
+    categories: any[];
+    banners: any[];
+    testimonials: any[];
+    settings: any;
+    orders: any[];
+    customers: any[];
   }>> {
-    return this.getFromGas('syncAll');
+    // 1. Try GET request first
+    try {
+      const getRes = await this.getFromGas<any>('syncAll');
+      if (getRes && (getRes.success || getRes.data)) {
+        return getRes;
+      }
+    } catch (e) {
+      console.warn('GET syncAll warning, trying POST fallback...', e);
+    }
+
+    // 2. Fallback to POST request
+    try {
+      const postRes = await this.postToGas<any>({ action: 'syncAll' });
+      if (postRes && (postRes.success || postRes.data)) {
+        return postRes;
+      }
+      return postRes;
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Gagal menarik data dari Google Spreadsheet: ${err.message}`,
+        error: err.toString(),
+      };
+    }
   }
 
   /**

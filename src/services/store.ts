@@ -7,20 +7,92 @@ import {
 } from '../data/initialData';
 import { gasSync } from './gasSyncService';
 
+const STORAGE_VERSION_KEY = 'bonles_app_version_v4_official';
+const CURRENT_VERSION = '2026.08.31_v4_official';
+
 const STORAGE_KEYS = {
-  PRODUCTS: 'bonles_products_v3',
-  CATEGORIES: 'bonles_categories_v3',
-  ORDERS: 'bonles_orders_v3',
-  CUSTOMERS: 'bonles_customers_v3',
-  SETTINGS: 'bonles_settings_v3',
-  BANNERS: 'bonles_banners_v3',
-  TESTIMONIALS: 'bonles_testimonials_v3',
-  LOGS: 'bonles_logs_v3',
-  CART: 'bonles_cart_v3',
-  RECENTLY_VIEWED: 'bonles_recently_viewed_v3',
+  PRODUCTS: 'bonles_products_v4',
+  CATEGORIES: 'bonles_categories_v4',
+  ORDERS: 'bonles_orders_v4',
+  CUSTOMERS: 'bonles_customers_v4',
+  SETTINGS: 'bonles_settings_v4',
+  BANNERS: 'bonles_banners_v4',
+  TESTIMONIALS: 'bonles_testimonials_v4',
+  LOGS: 'bonles_logs_v4',
+  CART: 'bonles_cart_v4',
+  RECENTLY_VIEWED: 'bonles_recently_viewed_v4',
 };
 
+/**
+ * Purge outdated browser cookies and obsolete cache keys
+ * to ensure visitors always receive fresh, up-to-date store data.
+ */
+export function clearOldCookiesAndLegacyCache(): void {
+  try {
+    // 1. Purge all browser cookies
+    if (typeof document !== 'undefined' && document.cookie) {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i];
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.slice(0, eqPos).trim() : cookie.trim();
+        if (name) {
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          if (typeof window !== 'undefined' && window.location) {
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+          }
+        }
+      }
+    }
+
+    // 2. Invalidate legacy localStorage versions if needed
+    if (typeof localStorage !== 'undefined') {
+      const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+      if (storedVersion !== CURRENT_VERSION) {
+        // Clean legacy v1, v2, v3 keys
+        const keysToRemove = [
+          'bonles_products_v1', 'bonles_products_v2', 'bonles_products_v3',
+          'bonles_categories_v1', 'bonles_categories_v2', 'bonles_categories_v3',
+          'bonles_settings_v1', 'bonles_settings_v2', 'bonles_settings_v3',
+          'bonles_banners_v1', 'bonles_banners_v2', 'bonles_banners_v3',
+          'bonles_testimonials_v1', 'bonles_testimonials_v2', 'bonles_testimonials_v3',
+          'bonles_logs_v1', 'bonles_logs_v2', 'bonles_logs_v3',
+          'bonles_cart_v1', 'bonles_cart_v2', 'bonles_cart_v3',
+          'bonles_recently_viewed_v1', 'bonles_recently_viewed_v2', 'bonles_recently_viewed_v3',
+        ];
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
+      }
+    }
+  } catch (err) {
+    console.warn('Cache & cookie purge warning:', err);
+  }
+}
+
 class StoreService {
+  private listeners: Set<() => void> = new Set();
+
+  constructor() {
+    clearOldCookiesAndLegacyCache();
+  }
+
+  public subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  public notifySubscribers(): void {
+    this.listeners.forEach(fn => {
+      try {
+        fn();
+      } catch (err) {
+        console.error('Store listener notification error:', err);
+      }
+    });
+  }
+
   private getStorage<T>(key: string, defaultVal: T): T {
     try {
       const data = localStorage.getItem(key);
@@ -80,7 +152,22 @@ class StoreService {
 
   // Products
   getProducts(activeOnly = false): Product[] {
-    const list = this.getStorage<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    let list = this.getStorage<Product[]>(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    // Sanitize any legacy [SAMPLE] tag in product names
+    let modified = false;
+    list = list.map(p => {
+      if (p.NAME && p.NAME.includes('[SAMPLE]')) {
+        modified = true;
+        return {
+          ...p,
+          NAME: p.NAME.replace(/\[SAMPLE\]\s*/gi, '').trim()
+        };
+      }
+      return p;
+    });
+    if (modified) {
+      this.setStorage(STORAGE_KEYS.PRODUCTS, list);
+    }
     if (activeOnly) {
       return list.filter(p => p.ACTIVE);
     }
@@ -396,6 +483,56 @@ class StoreService {
   // Settings
   getSettings(): Setting[] {
     const list = this.getStorage<Setting[]>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+    let modified = false;
+
+    // Ensure official WhatsApp Number (+6285174333902)
+    const waSetting = list.find(s => s.SETTING === 'WHATSAPP_NUMBER');
+    if (!waSetting) {
+      list.push({
+        SETTING: 'WHATSAPP_NUMBER',
+        VALUE: '6285174333902',
+        DESCRIPTION: 'Nomor WhatsApp resmi admin pemesanan (+6285174333902)',
+        UPDATED_AT: new Date().toISOString()
+      });
+      modified = true;
+    } else if (waSetting.VALUE === '6281234567890' || !waSetting.VALUE.trim()) {
+      waSetting.VALUE = '6285174333902';
+      waSetting.DESCRIPTION = 'Nomor WhatsApp resmi admin pemesanan (+6285174333902)';
+      modified = true;
+    }
+
+    // Ensure official Store Email (bonlesff@gmail.com)
+    const emailSetting = list.find(s => s.SETTING === 'STORE_EMAIL');
+    if (!emailSetting) {
+      list.push({
+        SETTING: 'STORE_EMAIL',
+        VALUE: 'bonlesff@gmail.com',
+        DESCRIPTION: 'Alamat email korespondensi resmi (bonlesff@gmail.com)',
+        UPDATED_AT: new Date().toISOString()
+      });
+      modified = true;
+    } else if (emailSetting.VALUE === 'bonlesfoodnusantara@gmail.com' || !emailSetting.VALUE.trim()) {
+      emailSetting.VALUE = 'bonlesff@gmail.com';
+      emailSetting.DESCRIPTION = 'Alamat email korespondensi resmi (bonlesff@gmail.com)';
+      modified = true;
+    }
+
+    // Ensure official Store Address (Jl. MT. Haryono Gg. Mufakat II No.84 Balikpapan Selatan)
+    const addrSetting = list.find(s => s.SETTING === 'STORE_ADDRESS');
+    if (!addrSetting) {
+      list.push({
+        SETTING: 'STORE_ADDRESS',
+        VALUE: 'Jl. MT. Haryono Gg. Mufakat II No.84 Balikpapan Selatan',
+        DESCRIPTION: 'Alamat fisik / lokasi operasional resmi toko',
+        UPDATED_AT: new Date().toISOString()
+      });
+      modified = true;
+    } else if (addrSetting.VALUE === 'Sentra Industri Pangan Nusantara, Indonesia' || !addrSetting.VALUE.trim()) {
+      addrSetting.VALUE = 'Jl. MT. Haryono Gg. Mufakat II No.84 Balikpapan Selatan';
+      addrSetting.DESCRIPTION = 'Alamat fisik / lokasi operasional resmi toko';
+      modified = true;
+    }
+
     // Ensure default APPS_SCRIPT_WEBAPP_URL is present
     const scriptSetting = list.find(s => s.SETTING === 'APPS_SCRIPT_WEBAPP_URL');
     if (!scriptSetting || !scriptSetting.VALUE || !scriptSetting.VALUE.trim()) {
@@ -410,6 +547,10 @@ class StoreService {
       } else {
         scriptSetting.VALUE = defaultUrl;
       }
+      modified = true;
+    }
+
+    if (modified) {
       this.setStorage(STORAGE_KEYS.SETTINGS, list);
     }
     return list;
@@ -536,6 +677,238 @@ class StoreService {
         this.addLog('SYNC', 'SYNC_SETTINGS_SUCCESS', 'SYSTEM', 'CONFIG', 'Pengaturan toko berhasil disinkronkan ke Google Spreadsheet', 'SUCCESS');
       }
     }).catch(err => console.warn('Sync Settings Error:', err));
+  }
+
+  /**
+   * Pull and sync ALL data directly from Google Spreadsheet into the Web App
+   * Updates Products, Categories, Settings (Store Name, WhatsApp, etc.), Banners, Testimonials
+   */
+  async pullFromCloudSpreadsheet(user = 'SYSTEM'): Promise<{
+    success: boolean;
+    message: string;
+    productCount: number;
+    categoryCount: number;
+    bannerCount: number;
+    testimonialCount: number;
+    settingsCount: number;
+    details?: any;
+  }> {
+    const parseSafeNum = (val: any, defaultVal = 0): number => {
+      if (val === undefined || val === null || val === '') return defaultVal;
+      if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+      const cleaned = String(val).replace(/[^0-9.-]/g, '');
+      const parsed = Number(cleaned);
+      return isNaN(parsed) ? defaultVal : parsed;
+    };
+
+    const parseSafeBool = (val: any, defaultVal = true): boolean => {
+      if (val === undefined || val === null || val === '') return defaultVal;
+      if (typeof val === 'boolean') return val;
+      const str = String(val).trim().toUpperCase();
+      if (str === 'TRUE' || str === '1' || str === 'YES' || str === 'YA' || str === 'AKTIF' || str === 'ACTIVE') return true;
+      if (str === 'FALSE' || str === '0' || str === 'NO' || str === 'TIDAK' || str === 'NONAKTIF' || str === 'INACTIVE') return false;
+      return defaultVal;
+    };
+
+    const parseSafeStr = (val: any, defaultVal = ''): string => {
+      if (val === undefined || val === null) return defaultVal;
+      return String(val).trim();
+    };
+
+    try {
+      const res = await gasSync.pullAllDataFromGoogleSheets();
+      if (!res.success || !res.data) {
+        return {
+          success: false,
+          message: res.message || 'Gagal mengambil data dari Google Spreadsheet.',
+          productCount: 0,
+          categoryCount: 0,
+          bannerCount: 0,
+          testimonialCount: 0,
+          settingsCount: 0,
+          details: res,
+        };
+      }
+
+      const data = res.data;
+      let pCount = 0;
+      let cCount = 0;
+      let bCount = 0;
+      let tCount = 0;
+      let sCount = 0;
+
+      // 1. Normalize & Save Categories
+      if (Array.isArray(data.categories) && data.categories.length > 0) {
+        const categories: Category[] = data.categories.map((c: any, index: number) => ({
+          ID: parseSafeStr(c.ID || c.id || `CAT-${String(index + 1).padStart(3, '0')}`),
+          NAME: parseSafeStr(c.NAME || c.name || `Kategori ${index + 1}`),
+          DESCRIPTION: parseSafeStr(c.DESCRIPTION || c.description || ''),
+          IMAGE_FILE_ID: parseSafeStr(c.IMAGE_FILE_ID || c.image_file_id || ''),
+          IMAGE_URL: parseSafeStr(c.IMAGE_URL || c.image_url || ''),
+          ACTIVE: parseSafeBool(c.ACTIVE !== undefined ? c.ACTIVE : c.active, true),
+          SORT_ORDER: parseSafeNum(c.SORT_ORDER !== undefined ? c.SORT_ORDER : c.sort_order, index + 1),
+          CREATED_AT: parseSafeStr(c.CREATED_AT || c.created_at || new Date().toISOString()),
+          UPDATED_AT: parseSafeStr(c.UPDATED_AT || c.updated_at || new Date().toISOString()),
+        })).filter(c => c.NAME);
+
+        if (categories.length > 0) {
+          this.setStorage(STORAGE_KEYS.CATEGORIES, categories);
+          cCount = categories.length;
+        }
+      }
+
+      // 2. Normalize & Save Products
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        const products: Product[] = data.products.map((p: any, index: number) => ({
+          ID: parseSafeStr(p.ID || p.id || `PRD-${String(index + 1).padStart(4, '0')}`),
+          SKU: parseSafeStr(p.SKU || p.sku || `SKU-${String(index + 1).padStart(3, '0')}`),
+          NAME: parseSafeStr(p.NAME || p.name || `Produk ${index + 1}`),
+          CATEGORY_ID: parseSafeStr(p.CATEGORY_ID || p.category_id || 'CAT-001'),
+          CATEGORY_NAME: parseSafeStr(p.CATEGORY_NAME || p.category_name || 'Snack'),
+          CATEGORY_FOLDER_ID: parseSafeStr(p.CATEGORY_FOLDER_ID || p.category_folder_id || ''),
+          PRODUCT_FOLDER_ID: parseSafeStr(p.PRODUCT_FOLDER_ID || p.product_folder_id || ''),
+          PRICE: parseSafeNum(p.PRICE !== undefined ? p.PRICE : p.price, 25000),
+          DISCOUNT_PRICE: parseSafeNum(p.DISCOUNT_PRICE !== undefined ? p.DISCOUNT_PRICE : p.discount_price, 0),
+          WEIGHT: parseSafeStr(p.WEIGHT || p.weight || '100g'),
+          STOCK: parseSafeNum(p.STOCK !== undefined ? p.STOCK : p.stock, 0),
+          DESCRIPTION: parseSafeStr(p.DESCRIPTION || p.description || ''),
+          COMPOSITION: parseSafeStr(p.COMPOSITION || p.composition || ''),
+          NUTRITION: parseSafeStr(p.NUTRITION || p.nutrition || ''),
+          MAIN_IMAGE_FILE_ID: parseSafeStr(p.MAIN_IMAGE_FILE_ID || p.main_image_file_id || ''),
+          MAIN_IMAGE_URL: parseSafeStr(p.MAIN_IMAGE_URL || p.main_image_url || ''),
+          GALLERY_1_FILE_ID: parseSafeStr(p.GALLERY_1_FILE_ID || p.gallery_1_file_id || ''),
+          GALLERY_1_URL: parseSafeStr(p.GALLERY_1_URL || p.gallery_1_url || ''),
+          GALLERY_2_FILE_ID: parseSafeStr(p.GALLERY_2_FILE_ID || p.gallery_2_file_id || ''),
+          GALLERY_2_URL: parseSafeStr(p.GALLERY_2_URL || p.gallery_2_url || ''),
+          GALLERY_3_FILE_ID: parseSafeStr(p.GALLERY_3_FILE_ID || p.gallery_3_file_id || ''),
+          GALLERY_3_URL: parseSafeStr(p.GALLERY_3_URL || p.gallery_3_url || ''),
+          FEATURED: parseSafeBool(p.FEATURED !== undefined ? p.FEATURED : p.featured, false),
+          ACTIVE: parseSafeBool(p.ACTIVE !== undefined ? p.ACTIVE : p.active, true),
+          CREATED_AT: parseSafeStr(p.CREATED_AT || p.created_at || new Date().toISOString()),
+          UPDATED_AT: parseSafeStr(p.UPDATED_AT || p.updated_at || new Date().toISOString()),
+        })).filter(p => p.NAME);
+
+        if (products.length > 0) {
+          this.setStorage(STORAGE_KEYS.PRODUCTS, products);
+          pCount = products.length;
+        }
+      }
+
+      // 3. Normalize & Save Settings (Store Name, WhatsApp, Tagline, Address, etc.)
+      if (data.settings) {
+        const currentSettings = this.getSettings();
+        const updatedSettings: Setting[] = [...currentSettings];
+
+        if (Array.isArray(data.settings)) {
+          data.settings.forEach((s: any) => {
+            const key = parseSafeStr(s.SETTING || s.setting || s[0]);
+            const val = parseSafeStr(s.VALUE !== undefined ? s.VALUE : (s.value !== undefined ? s.value : s[1]));
+            const desc = parseSafeStr(s.DESCRIPTION || s.description || s[2] || '');
+            if (key) {
+              const idx = updatedSettings.findIndex(x => x.SETTING === key);
+              if (idx >= 0) {
+                updatedSettings[idx] = { ...updatedSettings[idx], VALUE: val, DESCRIPTION: desc || updatedSettings[idx].DESCRIPTION, UPDATED_AT: new Date().toISOString() };
+              } else {
+                updatedSettings.push({ SETTING: key, VALUE: val, DESCRIPTION: desc, UPDATED_AT: new Date().toISOString() });
+              }
+            }
+          });
+        } else if (typeof data.settings === 'object') {
+          Object.entries(data.settings).forEach(([key, val]) => {
+            const strVal = parseSafeStr(val);
+            const idx = updatedSettings.findIndex(x => x.SETTING === key);
+            if (idx >= 0) {
+              updatedSettings[idx] = { ...updatedSettings[idx], VALUE: strVal, UPDATED_AT: new Date().toISOString() };
+            } else {
+              updatedSettings.push({ SETTING: key, VALUE: strVal, DESCRIPTION: '', UPDATED_AT: new Date().toISOString() });
+            }
+          });
+        }
+
+        this.setStorage(STORAGE_KEYS.SETTINGS, updatedSettings);
+        sCount = updatedSettings.length;
+      }
+
+      // 4. Normalize & Save Banners
+      if (Array.isArray(data.banners) && data.banners.length > 0) {
+        const banners: Banner[] = data.banners.map((b: any, index: number) => ({
+          ID: parseSafeStr(b.ID || b.id || `BNR-${String(index + 1).padStart(3, '0')}`),
+          TITLE: parseSafeStr(b.TITLE || b.title || ''),
+          SUBTITLE: parseSafeStr(b.SUBTITLE || b.subtitle || ''),
+          DESCRIPTION: parseSafeStr(b.DESCRIPTION || b.description || ''),
+          IMAGE_FILE_ID: parseSafeStr(b.IMAGE_FILE_ID || b.image_file_id || ''),
+          IMAGE_URL: parseSafeStr(b.IMAGE_URL || b.image_url || ''),
+          BUTTON_TEXT: parseSafeStr(b.BUTTON_TEXT || b.button_text || 'Lihat Katalog'),
+          BUTTON_LINK: parseSafeStr(b.BUTTON_LINK || b.button_link || '#catalog'),
+          ACTIVE: parseSafeBool(b.ACTIVE !== undefined ? b.ACTIVE : b.active, true),
+          SORT_ORDER: parseSafeNum(b.SORT_ORDER !== undefined ? b.SORT_ORDER : b.sort_order, index + 1),
+          CREATED_AT: parseSafeStr(b.CREATED_AT || b.created_at || new Date().toISOString()),
+          UPDATED_AT: parseSafeStr(b.UPDATED_AT || b.updated_at || new Date().toISOString()),
+        })).filter(b => b.TITLE || b.IMAGE_URL);
+
+        if (banners.length > 0) {
+          this.setStorage(STORAGE_KEYS.BANNERS, banners);
+          bCount = banners.length;
+        }
+      }
+
+      // 5. Normalize & Save Testimonials
+      if (Array.isArray(data.testimonials) && data.testimonials.length > 0) {
+        const testimonials: Testimonial[] = data.testimonials.map((t: any, index: number) => ({
+          ID: parseSafeStr(t.ID || t.id || `TESTI-${String(index + 1).padStart(3, '0')}`),
+          CUSTOMER_NAME: parseSafeStr(t.CUSTOMER_NAME || t.customer_name || 'Pelanggan Bonles'),
+          MESSAGE: parseSafeStr(t.MESSAGE || t.message || ''),
+          PHOTO_FILE_ID: parseSafeStr(t.PHOTO_FILE_ID || t.photo_file_id || ''),
+          PHOTO_URL: parseSafeStr(t.PHOTO_URL || t.photo_url || ''),
+          RATING: parseSafeNum(t.RATING !== undefined ? t.RATING : t.rating, 5),
+          ACTIVE: parseSafeBool(t.ACTIVE !== undefined ? t.ACTIVE : t.active, true),
+          SORT_ORDER: parseSafeNum(t.SORT_ORDER !== undefined ? t.SORT_ORDER : t.sort_order, index + 1),
+          CREATED_AT: parseSafeStr(t.CREATED_AT || t.created_at || new Date().toISOString()),
+          UPDATED_AT: parseSafeStr(t.UPDATED_AT || t.updated_at || new Date().toISOString()),
+        })).filter(t => t.MESSAGE);
+
+        if (testimonials.length > 0) {
+          this.setStorage(STORAGE_KEYS.TESTIMONIALS, testimonials);
+          tCount = testimonials.length;
+        }
+      }
+
+      // 6. Notify all UI listeners to trigger re-renders
+      this.notifySubscribers();
+
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      this.addLog(
+        'SYNC',
+        'PULL_FROM_SPREADSHEET',
+        user,
+        'SPREADSHEET_SYNC',
+        `Data live berhasil ditarik dari Google Spreadsheet pada ${timeStr} WIB: ${pCount} produk, ${cCount} kategori, ${sCount} pengaturan toko.`,
+        'SUCCESS'
+      );
+
+      return {
+        success: true,
+        message: `Berhasil memuat data langsung dari Google Spreadsheet (${pCount} produk, ${cCount} kategori, ${sCount} pengaturan).`,
+        productCount: pCount,
+        categoryCount: cCount,
+        bannerCount: bCount,
+        testimonialCount: tCount,
+        settingsCount: sCount,
+        details: res.data,
+      };
+    } catch (err: any) {
+      console.error('Pull from spreadsheet exception:', err);
+      return {
+        success: false,
+        message: `Terjadi kendala saat menarik data dari Google Spreadsheet: ${err.message}`,
+        productCount: 0,
+        categoryCount: 0,
+        bannerCount: 0,
+        testimonialCount: 0,
+        settingsCount: 0,
+        details: err,
+      };
+    }
   }
 
   /**
