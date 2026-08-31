@@ -2,5 +2,7 @@
   "name": "Bonles Food Nusantara",
   "description": "Aplikasi web katalog produk, sistem pemesanan WhatsApp, dan manajemen data PT. Bonles Food Nusantara berbasis Google Sheets dan Google Drive.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

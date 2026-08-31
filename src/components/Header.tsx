@@ -6,6 +6,7 @@ interface HeaderProps {
   cartCount: number;
   onOpenCart: () => void;
   isAdmin: boolean;
+  isAuthenticated: boolean;
   onToggleAdmin: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   cartCount,
   onOpenCart,
   isAdmin,
+  isAuthenticated,
   onToggleAdmin,
   searchQuery,
   onSearchChange,
@@ -96,19 +98,27 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </div>
 
-          {/* Admin Dashboard Toggle */}
+          {/* Admin Dashboard / Superadmin Login Button */}
           <button
             onClick={onToggleAdmin}
             id="btn-admin-toggle"
             className={`flex items-center gap-2 px-3 py-2 rounded-sm border text-xs tracking-wider uppercase font-medium transition-all ${
               isAdmin
                 ? 'bg-[#C5A059] text-black border-[#C5A059] font-bold shadow-md shadow-[#C5A059]/20'
+                : isAuthenticated
+                ? 'bg-[#161618] text-[#00D222] border-[#00D222]/40 hover:border-[#00D222] hover:bg-[#1F1F23]'
                 : 'bg-[#161618] text-[#C5A059] border-[#C5A059]/30 hover:border-[#C5A059] hover:bg-[#1F1F23]'
             }`}
-            title="Kelola Produk, Pesanan, Google Sheets & Drive"
+            title={
+              isAuthenticated
+                ? 'Buka Panel Administrasi Superadmin'
+                : 'Login Administrator'
+            }
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span className="hidden sm:inline">{isAdmin ? 'Mode Web' : 'Admin Panel'}</span>
+            <ShieldCheck className={`w-4 h-4 ${isAuthenticated ? 'text-[#00D222]' : 'text-[#C5A059]'}`} />
+            <span className="hidden sm:inline">
+              {isAdmin ? 'Mode Web' : isAuthenticated ? 'Super Admin' : 'Login'}
+            </span>
           </button>
 
           {/* Shopping Cart Button */}

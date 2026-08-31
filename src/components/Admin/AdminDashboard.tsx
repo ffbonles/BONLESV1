@@ -2,21 +2,24 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, Package, FolderTree, Image as ImageIcon, ShoppingCart, 
   Users, Settings as SettingsIcon, FileText, Code2, Plus, Edit2, CheckCircle2, 
-  AlertTriangle, Ban, Search, Copy, Check, ExternalLink, RefreshCw, Eye, ArrowUpRight
+  AlertTriangle, Ban, Search, Copy, Check, ExternalLink, RefreshCw, Eye, ArrowUpRight,
+  LogOut, ShieldCheck, UserCheck
 } from 'lucide-react';
 import { Product, Category, Order, Customer, Setting, SystemLog } from '../../types';
 import { store } from '../../services/store';
+import { authService, SUPERADMIN_CREDENTIALS } from '../../services/auth';
 import { APPS_SCRIPT_FILES } from '../../data/appsScriptCode';
 import { BonlesLogo } from '../BonlesLogo';
 
 interface AdminDashboardProps {
   onCloseAdmin: () => void;
   onRefreshData: () => void;
+  onLogout: () => void;
 }
 
 type AdminTab = 'summary' | 'products' | 'categories' | 'media' | 'orders' | 'customers' | 'settings' | 'logs' | 'codeHub';
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, onRefreshData }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, onRefreshData, onLogout }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('summary');
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
@@ -123,12 +126,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
           <span className="hidden md:inline text-[10px] tracking-[0.2em] text-[#00D222] font-bold uppercase bg-[#00D222]/10 border border-[#00D222]/20 px-2 py-0.5 rounded-xs">
             Admin & Database Management
           </span>
+          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-[#1A1A1E] border border-white/10 rounded-xs text-[11px] text-[#C5A059]">
+            <ShieldCheck className="w-3.5 h-3.5 text-[#00D222]" />
+            <span className="font-mono text-white/90">{SUPERADMIN_CREDENTIALS.USERNAME}</span>
+            <span className="text-[9px] bg-[#C5A059]/20 px-1 rounded-2xs font-bold text-[#C5A059]">SUPERADMIN</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={reloadData}
-            className="bg-[#0A0A0B] hover:bg-[#1F1F23] text-[#AAAAAA] hover:text-white border border-white/10 p-2 rounded-sm text-xs flex items-center gap-1.5 transition-colors"
+            className="bg-[#0A0A0B] hover:bg-[#1F1F23] text-[#AAAAAA] hover:text-white border border-white/10 p-2 rounded-sm text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             title="Muat Ulang Data"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -137,9 +145,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
 
           <button
             onClick={onCloseAdmin}
-            className="bg-[#C5A059] hover:bg-[#D4B06A] text-black font-bold px-4 py-2 rounded-sm text-xs tracking-wider uppercase transition-colors"
+            className="bg-[#1A1A1E] hover:bg-[#25252A] text-white border border-white/15 px-3.5 py-2 rounded-sm text-xs tracking-wider uppercase transition-colors cursor-pointer"
           >
-            Kembali ke Toko
+            Mode Web
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="bg-[#E81818]/15 hover:bg-[#E81818]/25 text-[#FF8888] hover:text-white border border-[#E81818]/40 px-3 py-2 rounded-sm text-xs tracking-wider uppercase font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Logout dari Sesi Super Administrator"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </header>
@@ -281,6 +298,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin, on
             <Code2 className="w-4 h-4" />
             <span>Apps Script & Drive Hub</span>
           </button>
+
+          {/* Super Administrator Profile Card */}
+          <div className="pt-4 mt-4 border-t border-white/10">
+            <div className="bg-[#161618] border border-white/10 rounded-sm p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059]">
+                  <ShieldCheck className="w-4 h-4 text-[#00D222]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-white truncate">Super Administrator</p>
+                  <p className="text-[10px] text-[#888888] font-mono truncate">{SUPERADMIN_CREDENTIALS.USERNAME}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-[#00D222] bg-[#00D222]/10 border border-[#00D222]/20 px-2 py-1 rounded-2xs">
+                <span>Status: Otoritas Penuh</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00D222] animate-pulse"></span>
+              </div>
+
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-[#FF8888] hover:text-white bg-[#E81818]/10 hover:bg-[#E81818]/25 border border-[#E81818]/30 py-1.5 rounded-xs transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Logout Sesi</span>
+              </button>
+            </div>
+          </div>
         </aside>
 
         {/* Main Content Area */}

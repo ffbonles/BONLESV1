@@ -18,6 +18,8 @@ import { TestimonialsSection } from './components/TestimonialsSection';
 import { RecentlyViewedSection } from './components/RecentlyViewedSection';
 import { Footer } from './components/Footer';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
+import { AdminLoginModal } from './components/AdminLoginModal';
+import { authService } from './services/auth';
 
 export default function App() {
   // App state
@@ -36,6 +38,8 @@ export default function App() {
 
   // UI Modal toggles
   const [isAdminView, setIsAdminView] = useState<boolean>(false);
+  const [isSuperAdminAuthenticated, setIsSuperAdminAuthenticated] = useState<boolean>(() => authService.isAuthenticated());
+  const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState<boolean>(false);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [activeDetailProduct, setActiveDetailProduct] = useState<Product | null>(null);
@@ -47,6 +51,33 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleToggleAdmin = () => {
+    if (isAdminView) {
+      // Toggle back to web store
+      setIsAdminView(false);
+    } else {
+      // Check Super Administrator authentication
+      if (authService.isAuthenticated()) {
+        setIsAdminView(true);
+      } else {
+        setIsAdminLoginModalOpen(true);
+      }
+    }
+  };
+
+  const handleSuperAdminLoginSuccess = () => {
+    setIsSuperAdminAuthenticated(true);
+    setIsAdminView(true);
+    showToast('Autentifikasi berhasil: Hak akses Admin aktif.');
+  };
+
+  const handleLogoutSuperAdmin = () => {
+    authService.logout();
+    setIsSuperAdminAuthenticated(false);
+    setIsAdminView(false);
+    showToast('Sesi Admin telah berhasil di-logout.');
   };
 
   const loadData = () => {
@@ -147,6 +178,7 @@ export default function App() {
           loadData();
         }}
         onRefreshData={loadData}
+        onLogout={handleLogoutSuperAdmin}
       />
     );
   }
@@ -166,7 +198,8 @@ export default function App() {
         cartCount={totalCartCount}
         onOpenCart={() => setIsCartOpen(true)}
         isAdmin={isAdminView}
-        onToggleAdmin={() => setIsAdminView(!isAdminView)}
+        isAuthenticated={isSuperAdminAuthenticated}
+        onToggleAdmin={handleToggleAdmin}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onNavigateHome={() => {
@@ -433,6 +466,13 @@ export default function App() {
       <OrderSuccessModal
         order={completedOrder}
         onClose={() => setCompletedOrder(null)}
+      />
+
+      {/* Super Administrator Login Gateway Modal */}
+      <AdminLoginModal
+        isOpen={isAdminLoginModalOpen}
+        onClose={() => setIsAdminLoginModalOpen(false)}
+        onLoginSuccess={handleSuperAdminLoginSuccess}
       />
     </div>
   );
